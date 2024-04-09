@@ -661,13 +661,15 @@ func (s *S3Backend) CopyBlob(param *CopyBlobInput) (*CopyBlobOutput, error) {
 
 	from := s.bucket + "/" + param.Source
 
-	if !s.gcs && *param.Size > COPY_LIMIT {
-		reqId, err := s.copyObjectMultipart(int64(*param.Size), from, param.Destination, "", param.ETag, param.Metadata, param.StorageClass)
-		if err != nil {
-			return nil, err
+	/*
+		if !s.gcs && *param.Size > COPY_LIMIT {
+			reqId, err := s.copyObjectMultipart(int64(*param.Size), from, param.Destination, "", param.ETag, param.Metadata, param.StorageClass)
+			if err != nil {
+				return nil, err
+			}
+			return &CopyBlobOutput{reqId}, nil
 		}
-		return &CopyBlobOutput{reqId}, nil
-	}
+	*/
 
 	params := &s3.CopyObjectInput{
 		Bucket:            &s.bucket,
