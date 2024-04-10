@@ -241,8 +241,8 @@ func (fh *FileHandle) partSize() uint64 {
 	if maxPartSize != 0 {
 		size = MinUInt64(maxPartSize, size)
 	}
-	// Something I could test here is increasing this and then re uploading and trying things
-	size = 625 * 1024 * 1024 // ~625 MB
+	// Try 10Gb
+	size = 10000 * 1024 * 1024 // ~10GB
 	return size
 }
 
