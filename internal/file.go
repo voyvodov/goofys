@@ -241,8 +241,8 @@ func (fh *FileHandle) partSize() uint64 {
 	if maxPartSize != 0 {
 		size = MinUInt64(maxPartSize, size)
 	}
-	// Try 10Gb
-	size = 10000 * 1024 * 1024 // ~10GB
+	// Try 4.5Gb
+	size = 45000 * 1024 * 1024 // ~2.5Gb
 	return size
 }
 
