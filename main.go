@@ -215,8 +215,10 @@ func main() {
 			if !flags.Foreground {
 				kill(os.Getppid(), syscall.SIGUSR2)
 			}
-			log.Fatalf("Mounting file system: %v", err)
+			// log.Fatalf("Mounting file system: %v", err)
 			// fatal also terminates itself
+			log.Printf("Mounting file system: %v", err)
+			return
 		} else {
 			if !flags.Foreground {
 				kill(os.Getppid(), syscall.SIGUSR1)
