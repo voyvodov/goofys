@@ -57,8 +57,9 @@ import (
 
 	"github.com/sirupsen/logrus"
 
-	. "gopkg.in/check.v1"
 	"runtime/debug"
+
+	. "gopkg.in/check.v1"
 )
 
 // so I don't get complains about unused imports
@@ -313,6 +314,7 @@ func (s *GoofysTest) deleteBucket(cloud StorageBackend) error {
 
 func (s *GoofysTest) TearDownTest(t *C) {
 	close(s.timeout)
+	s.timeout = nil
 
 	for _, cloud := range s.removeBucket {
 		err := s.deleteBucket(cloud)
@@ -437,7 +439,10 @@ func (s *GoofysTest) setupDefaultEnv(t *C, public bool) {
 	s.setupEnv(t, s.env, public)
 }
 
-func (s *GoofysTest) setUpTestTimeout(t *C) {
+func (s *GoofysTest) setUpTestTimeout(t *C, timeout time.Duration) {
+	if s.timeout != nil {
+		close(s.timeout)
+	}
 	s.timeout = make(chan int)
 	debug.SetTraceback("all")
 	started := time.Now()
@@ -448,9 +453,9 @@ func (s *GoofysTest) setUpTestTimeout(t *C) {
 			if !ok {
 				return
 			}
-		case <-time.After(PerTestTimeout):
+		case <-time.After(timeout):
 			panic(fmt.Sprintf("timeout %v reached. Started %v now %v",
-				PerTestTimeout, started, time.Now()))
+				timeout, started, time.Now()))
 		}
 	}()
 }
@@ -458,7 +463,7 @@ func (s *GoofysTest) setUpTestTimeout(t *C) {
 func (s *GoofysTest) SetUpTest(t *C) {
 	log.Infof("Starting at %v", time.Now())
 
-	s.setUpTestTimeout(t)
+	s.setUpTestTimeout(t, PerTestTimeout)
 
 	var bucket string
 	mount := os.Getenv("MOUNT")
@@ -503,7 +508,7 @@ func (s *GoofysTest) SetUpTest(t *C) {
 		_, err = s3.ListBuckets(nil)
 		t.Assert(err, IsNil)
 
-	} else if cloud == "gcs" {
+	} else if cloud == "gcs3" {
 		conf := s.selectTestConfig(t, flags)
 		flags.Backend = &conf
 
@@ -608,6 +613,15 @@ func (s *GoofysTest) SetUpTest(t *C) {
 		flags.Backend = &config
 
 		s.cloud, err = NewADLv2(bucket, flags, &config)
+		t.Assert(err, IsNil)
+		t.Assert(s.cloud, NotNil)
+	} else if cloud == "gcs" {
+		config := NewGCSConfig()
+		t.Assert(config, NotNil)
+
+		flags.Backend = config
+		var err error
+		s.cloud, err = NewGCS(bucket, config)
 		t.Assert(err, IsNil)
 		t.Assert(s.cloud, NotNil)
 	} else {
@@ -901,7 +915,7 @@ func (s *GoofysTest) TestReadFiles(t *C) {
 			in, err := parent.LookUp(en.Name)
 			t.Assert(err, IsNil)
 
-			fh, err := in.OpenFile(fuseops.OpMetadata{uint32(os.Getpid())})
+			fh, err := in.OpenFile(fuseops.OpContext{uint32(os.Getpid())})
 			t.Assert(err, IsNil)
 
 			buf := make([]byte, 4096)
@@ -927,7 +941,7 @@ func (s *GoofysTest) TestReadOffset(t *C) {
 	in, err := root.LookUp(f)
 	t.Assert(err, IsNil)
 
-	fh, err := in.OpenFile(fuseops.OpMetadata{uint32(os.Getpid())})
+	fh, err := in.OpenFile(fuseops.OpContext{uint32(os.Getpid())})
 	t.Assert(err, IsNil)
 
 	buf := make([]byte, 4096)
@@ -951,7 +965,7 @@ func (s *GoofysTest) TestReadOffset(t *C) {
 func (s *GoofysTest) TestCreateFiles(t *C) {
 	fileName := "testCreateFile"
 
-	_, fh := s.getRoot(t).Create(fileName, fuseops.OpMetadata{uint32(os.Getpid())})
+	_, fh := s.getRoot(t).Create(fileName, fuseops.OpContext{uint32(os.Getpid())})
 
 	err := fh.FlushFile()
 	t.Assert(err, IsNil)
@@ -970,7 +984,7 @@ func (s *GoofysTest) TestCreateFiles(t *C) {
 	inode, err := s.getRoot(t).LookUp(fileName)
 	t.Assert(err, IsNil)
 
-	fh, err = inode.OpenFile(fuseops.OpMetadata{uint32(os.Getpid())})
+	fh, err = inode.OpenFile(fuseops.OpContext{uint32(os.Getpid())})
 	t.Assert(err, IsNil)
 
 	err = fh.FlushFile()
@@ -983,6 +997,32 @@ func (s *GoofysTest) TestCreateFiles(t *C) {
 		t.Assert(resp.HeadBlobOutput.Size, Equals, uint64(1))
 	}
 	defer resp.Body.Close()
+}
+
+func (s *GoofysTest) TestRenameWithSpecialChar(t *C) {
+	fileName := "foo+"
+	s.testWriteFile(t, fileName, 1, 128*1024)
+
+	inode, err := s.getRoot(t).LookUp(fileName)
+	t.Assert(err, IsNil)
+
+	fh, err := inode.OpenFile(fuseops.OpContext{uint32(os.Getpid())})
+	t.Assert(err, IsNil)
+
+	err = fh.FlushFile()
+	t.Assert(err, IsNil)
+
+	resp, err := s.cloud.GetBlob(&GetBlobInput{Key: fileName})
+	t.Assert(err, IsNil)
+	// ADLv1 doesn't return size when we do a GET
+	if _, adlv1 := s.cloud.(*ADLv1); !adlv1 {
+		t.Assert(resp.HeadBlobOutput.Size, Equals, uint64(1))
+	}
+	defer resp.Body.Close()
+
+	root := s.getRoot(t)
+	err = root.Rename(fileName, root, "foo")
+	t.Assert(err, IsNil)
 }
 
 func (s *GoofysTest) TestUnlink(t *C) {
@@ -1049,7 +1089,7 @@ func (s *GoofysTest) testWriteFileAt(t *C, fileName string, offset int64, size i
 		}
 	} else {
 		in := s.fs.inodes[lookup.Entry.Child]
-		fh, err = in.OpenFile(fuseops.OpMetadata{uint32(os.Getpid())})
+		fh, err = in.OpenFile(fuseops.OpContext{uint32(os.Getpid())})
 		t.Assert(err, IsNil)
 	}
 
@@ -1104,6 +1144,9 @@ func (s *GoofysTest) TestWriteLargeFile(t *C) {
 }
 
 func (s *GoofysTest) TestWriteReallyLargeFile(t *C) {
+	if _, ok := s.cloud.(*S3Backend); ok && s.emulator {
+		t.Skip("seems to be OOM'ing S3proxy 1.8.0")
+	}
 	s.testWriteFile(t, "testLargeFile", 512*1024*1024+1, 128*1024)
 }
 
@@ -1148,7 +1191,7 @@ func (s *GoofysTest) TestReadRandom(t *C) {
 	in, err := s.LookUpInode(t, "testLargeFile")
 	t.Assert(err, IsNil)
 
-	fh, err := in.OpenFile(fuseops.OpMetadata{uint32(os.Getpid())})
+	fh, err := in.OpenFile(fuseops.OpContext{uint32(os.Getpid())})
 	t.Assert(err, IsNil)
 	fr := &FileHandleReader{s.fs, fh, 0}
 
@@ -1180,7 +1223,7 @@ func (s *GoofysTest) TestMkDir(t *C) {
 	t.Assert(err, IsNil)
 
 	fileName := "file"
-	_, fh := inode.Create(fileName, fuseops.OpMetadata{uint32(os.Getpid())})
+	_, fh := inode.Create(fileName, fuseops.OpContext{uint32(os.Getpid())})
 
 	err = fh.FlushFile()
 	t.Assert(err, IsNil)
@@ -1290,6 +1333,8 @@ func (s *GoofysTest) TestBackendListPagination(t *C) {
 		itemsPerPage = 1000
 	case *AZBlob, *ADLv2:
 		itemsPerPage = 5000
+	case *GCSBackend:
+		itemsPerPage = 1000
 	default:
 		t.Fatalf("unknown backend: %T", s.cloud)
 	}
@@ -1614,6 +1659,7 @@ func (s *GoofysTest) mount(t *C, mountPoint string) {
 	// Mount the file system.
 	mountCfg := &fuse.MountConfig{
 		FSName:                  s.fs.bucket,
+		Subtype:                 "goofys",
 		Options:                 s.fs.flags.MountOptions,
 		ErrorLogger:             GetStdLogger(NewLogger("fuse"), logrus.ErrorLevel),
 		DisableWritebackCaching: true,
@@ -1772,6 +1818,7 @@ func (s *GoofysTest) TestBenchLs(t *C) {
 	s.fs.flags.TypeCacheTTL = 1 * time.Minute
 	s.fs.flags.StatCacheTTL = 1 * time.Minute
 	mountPoint := "/tmp/mnt" + s.fs.bucket
+	s.setUpTestTimeout(t, 20*time.Minute)
 	s.runFuseTest(t, mountPoint, false, "../bench/bench.sh", "cat", mountPoint, "ls")
 }
 
@@ -2855,7 +2902,7 @@ func (s *GoofysTest) TestDirMtimeCreate(t *C) {
 	m1 := attr.Mtime
 	time.Sleep(time.Second)
 
-	_, _ = root.Create("foo", fuseops.OpMetadata{uint32(os.Getpid())})
+	_, _ = root.Create("foo", fuseops.OpContext{uint32(os.Getpid())})
 	attr2, _ := root.GetAttributes()
 	m2 := attr2.Mtime
 
@@ -2918,7 +2965,7 @@ func (s *GoofysTest) TestRead403(t *C) {
 	in, err := s.LookUpInode(t, "file1")
 	t.Assert(err, IsNil)
 
-	fh, err := in.OpenFile(fuseops.OpMetadata{uint32(os.Getpid())})
+	fh, err := in.OpenFile(fuseops.OpContext{uint32(os.Getpid())})
 	t.Assert(err, IsNil)
 
 	s3.awsConfig.Credentials = credentials.AnonymousCredentials
@@ -3345,6 +3392,10 @@ func (s *GoofysTest) newBackend(t *C, bucket string, createBucket bool) (cloud S
 		config, _ := s.fs.flags.Backend.(*ADLv2Config)
 		cloud, err = NewADLv2(bucket, s.fs.flags, config)
 		t.Assert(err, IsNil)
+	case *GCSBackend:
+		config, _ := s.fs.flags.Backend.(*GCSConfig)
+		cloud, err = NewGCS(bucket, config)
+		t.Assert(err, IsNil)
 	default:
 		t.Fatal("unknown backend")
 	}
@@ -3380,7 +3431,7 @@ func (s *GoofysTest) TestVFS(t *C) {
 	_, err = in.LookUp("file5")
 	t.Assert(err, Equals, fuse.ENOENT)
 
-	_, fh := in.Create("testfile", fuseops.OpMetadata{uint32(os.Getpid())})
+	_, fh := in.Create("testfile", fuseops.OpContext{uint32(os.Getpid())})
 	err = fh.FlushFile()
 	t.Assert(err, IsNil)
 
@@ -3415,7 +3466,7 @@ func (s *GoofysTest) TestVFS(t *C) {
 
 	// create another file inside subdir to make sure that our
 	// mount check is correct for dir inside the root
-	_, fh = subdir.Create("testfile2", fuseops.OpMetadata{uint32(os.Getpid())})
+	_, fh = subdir.Create("testfile2", fuseops.OpContext{uint32(os.Getpid())})
 	err = fh.FlushFile()
 	t.Assert(err, IsNil)
 
@@ -3578,6 +3629,19 @@ func (s *GoofysTest) TestMountsError(t *C) {
 		defer func() {
 			adlCloud.client.BaseClient.Authorizer = auth
 		}()
+	} else if _, ok := s.cloud.(*GCSBackend); ok {
+		// We'll trigger a failure on GCS mount by using an unauthenticated client to mount to a private bucket
+		defaultCreds := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
+		os.Unsetenv("GOOGLE_APPLICATION_CREDENTIALS")
+
+		defer func() {
+			os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", defaultCreds)
+		}()
+
+		var err error
+		config := NewGCSConfig()
+		cloud, err = NewGCS(s.fs.bucket, config)
+		t.Assert(err, IsNil)
 	} else {
 		cloud = s.newBackend(t, bucket, false)
 	}
@@ -3683,7 +3747,7 @@ func (s *GoofysTest) testMountsNested(t *C, cloud StorageBackend,
 	t.Assert(*dir_dir.Name, Equals, "dir")
 	t.Assert(dir_dir.dir.cloud == cloud, Equals, true)
 
-	_, fh := dir_in.Create("testfile", fuseops.OpMetadata{uint32(os.Getpid())})
+	_, fh := dir_in.Create("testfile", fuseops.OpContext{uint32(os.Getpid())})
 	err = fh.FlushFile()
 	t.Assert(err, IsNil)
 
@@ -3691,7 +3755,7 @@ func (s *GoofysTest) testMountsNested(t *C, cloud StorageBackend,
 	t.Assert(err, IsNil)
 	defer resp.Body.Close()
 
-	_, fh = dir_dir.Create("testfile", fuseops.OpMetadata{uint32(os.Getpid())})
+	_, fh = dir_dir.Create("testfile", fuseops.OpContext{uint32(os.Getpid())})
 	err = fh.FlushFile()
 	t.Assert(err, IsNil)
 
@@ -3946,7 +4010,7 @@ func (s *GoofysTest) TestWriteListFlush(t *C) {
 	t.Assert(err, IsNil)
 	s.fs.insertInode(root, dir)
 
-	in, fh := dir.Create("file1", fuseops.OpMetadata{})
+	in, fh := dir.Create("file1", fuseops.OpContext{})
 	t.Assert(in, NotNil)
 	t.Assert(fh, NotNil)
 	s.fs.insertInode(dir, in)
@@ -3996,7 +4060,7 @@ func (s *GoofysTest) TestWriteUnlinkFlush(t *C) {
 	t.Assert(err, IsNil)
 	s.fs.insertInode(root, dir)
 
-	in, fh := dir.Create("deleted", fuseops.OpMetadata{})
+	in, fh := dir.Create("deleted", fuseops.OpContext{})
 	t.Assert(in, NotNil)
 	t.Assert(fh, NotNil)
 	s.fs.insertInode(dir, in)
@@ -4164,10 +4228,12 @@ func (s *GoofysTest) testReadMyOwnWriteFuse(t *C, externalUpdate bool) {
 	if !externalUpdate {
 		// we flushed and ttl expired, next lookup should
 		// realize nothing is changed and NOT invalidate the
-		// cache. Except ADLv1 because PUT there doesn't
+		// cache. Except ADLv1,GCS because PUT there doesn't
 		// return the mtime, so the open above will think the
 		// file is updated and not re-use cache
-		if _, adlv1 := s.cloud.(*ADLv1); !adlv1 {
+		_, adlv1 := s.cloud.(*ADLv1)
+		_, isGCS := s.cloud.(*GCSBackend)
+		if !adlv1 && !isGCS {
 			cloud.err = fuse.EINVAL
 		}
 	} else {

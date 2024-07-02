@@ -137,6 +137,8 @@ func massageArg0() {
 var Version = "use `make build' to fill version hash correctly"
 
 func main() {
+	// Changing just to make sure when I push im not using regular goofys still
+	VersionNumber = "0.42.0"
 	VersionHash = Version
 
 	massagePath()
@@ -216,8 +218,10 @@ func main() {
 			if !flags.Foreground {
 				kill(os.Getppid(), syscall.SIGUSR2)
 			}
-			log.Fatalf("Mounting file system: %v", err)
+			// log.Fatalf("Mounting file system: %v", err)
 			// fatal also terminates itself
+			log.Printf("Mounting file system: %v", err)
+			return
 		} else {
 			if !flags.Foreground {
 				kill(os.Getppid(), syscall.SIGUSR1)

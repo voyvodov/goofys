@@ -420,7 +420,7 @@ func nilMetadata(m map[string]*string) map[string]string {
 	metadata := make(map[string]string)
 	for k, v := range m {
 		k = strings.ToLower(k)
-		metadata[k] = nilStr(v)
+		metadata[k] = NilStr(v)
 	}
 	return metadata
 }
@@ -443,7 +443,7 @@ func (b *AZBlob) HeadBlob(param *HeadBlobInput) (*HeadBlobOutput, error) {
 	}
 
 	blob := c.NewBlobURL(param.Key)
-	resp, err := blob.GetProperties(context.TODO(), azblob.BlobAccessConditions{})
+	resp, err := blob.GetProperties(context.TODO(), azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		return nil, mapAZBError(err)
 	}
@@ -470,13 +470,6 @@ func (b *AZBlob) HeadBlob(param *HeadBlobInput) (*HeadBlobOutput, error) {
 	}, nil
 }
 
-func nilStr(v *string) string {
-	if v == nil {
-		return ""
-	} else {
-		return *v
-	}
-}
 func nilUint32(v *uint32) uint32 {
 	if v == nil {
 		return 0
@@ -499,11 +492,11 @@ func (b *AZBlob) ListBlobs(param *ListBlobsInput) (*ListBlobsOutput, error) {
 	prefixes := make([]BlobPrefixOutput, 0)
 	items := make([]BlobItemOutput, 0)
 
-	var blobItems []azblob.BlobItem
+	var blobItems []azblob.BlobItemInternal
 	var nextMarker *string
 
 	options := azblob.ListBlobsSegmentOptions{
-		Prefix:     nilStr(param.Prefix),
+		Prefix:     NilStr(param.Prefix),
 		MaxResults: int32(nilUint32(param.MaxKeys)),
 		Details: azblob.BlobListingDetails{
 			// blobfuse (following wasb) convention uses
@@ -523,7 +516,7 @@ func (b *AZBlob) ListBlobs(param *ListBlobsInput) (*ListBlobsOutput, error) {
 			azblob.Marker{
 				param.ContinuationToken,
 			},
-			nilStr(param.Delimiter),
+			NilStr(param.Delimiter),
 			options)
 		if err != nil {
 			return nil, mapAZBError(err)
@@ -718,8 +711,7 @@ func (b *AZBlob) CopyBlob(param *CopyBlobInput) (*CopyBlobOutput, error) {
 
 	src := c.NewBlobURL(param.Source)
 	dest := c.NewBlobURL(param.Destination)
-	resp, err := dest.StartCopyFromURL(context.TODO(), src.URL(), nilMetadata(param.Metadata),
-		azblob.ModifiedAccessConditions{}, azblob.BlobAccessConditions{})
+	resp, err := dest.StartCopyFromURL(context.TODO(), src.URL(), azblob.Metadata{}, azblob.ModifiedAccessConditions{}, azblob.BlobAccessConditions{}, azblob.AccessTierNone, azblob.BlobTagsMap{})
 	if err != nil {
 		return nil, mapAZBError(err)
 	}
@@ -728,7 +720,7 @@ func (b *AZBlob) CopyBlob(param *CopyBlobInput) (*CopyBlobOutput, error) {
 		time.Sleep(50 * time.Millisecond)
 
 		var copy *azblob.BlobGetPropertiesResponse
-		for copy, err = dest.GetProperties(context.TODO(), azblob.BlobAccessConditions{}); err == nil; copy, err = dest.GetProperties(context.TODO(), azblob.BlobAccessConditions{}) {
+		for copy, err = dest.GetProperties(context.TODO(), azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{}); err == nil; copy, err = dest.GetProperties(context.TODO(), azblob.BlobAccessConditions{}, azblob.ClientProvidedKeyOptions{}) {
 			// if there's a new copy, we can only assume the last one was done
 			if copy.CopyStatus() != azblob.CopyStatusPending || copy.CopyID() != resp.CopyID() {
 				break
@@ -760,7 +752,7 @@ func (b *AZBlob) GetBlob(param *GetBlobInput) (*GetBlobOutput, error) {
 			ModifiedAccessConditions: azblob.ModifiedAccessConditions{
 				IfMatch: ifMatch,
 			},
-		}, false)
+		}, false, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		return nil, mapAZBError(err)
 	}
@@ -811,9 +803,9 @@ func (b *AZBlob) PutBlob(param *PutBlobInput) (*PutBlobOutput, error) {
 	resp, err := blob.Upload(context.TODO(),
 		body,
 		azblob.BlobHTTPHeaders{
-			ContentType: nilStr(param.ContentType),
+			ContentType: NilStr(param.ContentType),
 		},
-		nilMetadata(param.Metadata), azblob.BlobAccessConditions{})
+		nilMetadata(param.Metadata), azblob.BlobAccessConditions{}, azblob.AccessTierNone, azblob.BlobTagsMap{}, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		return nil, mapAZBError(err)
 	}
@@ -850,7 +842,7 @@ func (b *AZBlob) MultipartBlobAdd(param *MultipartBlobAddInput) (*MultipartBlobA
 	atomic.AddUint32(&param.Commit.NumParts, 1)
 
 	_, err = blob.StageBlock(context.TODO(), base64BlockId, param.Body,
-		azblob.LeaseAccessConditions{}, nil)
+		azblob.LeaseAccessConditions{}, nil, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		return nil, mapAZBError(err)
 	}
@@ -880,7 +872,7 @@ func (b *AZBlob) MultipartBlobCommit(param *MultipartBlobCommitInput) (*Multipar
 
 	resp, err := blob.CommitBlockList(context.TODO(), parts,
 		azblob.BlobHTTPHeaders{}, nilMetadata(param.Metadata),
-		azblob.BlobAccessConditions{})
+		azblob.BlobAccessConditions{}, azblob.AccessTierNone, azblob.BlobTagsMap{}, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		return nil, mapAZBError(err)
 	}

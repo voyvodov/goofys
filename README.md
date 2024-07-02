@@ -3,6 +3,7 @@
 [![Build Status](https://travis-ci.org/kahing/goofys.svg?branch=master)](https://travis-ci.org/kahing/goofys)
 [![Github All Releases](https://img.shields.io/github/downloads/kahing/goofys/total.svg)](https://github.com/kahing/goofys/releases/)
 [![Twitter Follow](https://img.shields.io/twitter/follow/s3goofys.svg?style=social&label=Follow)](https://twitter.com/s3goofys)
+[![Stack Overflow Questions](https://img.shields.io/stackexchange/stackoverflow/t/goofys?label=Stack%20Overflow%20questions)](https://stackoverflow.com/search?q=%5Bgoofys%5D+is%3Aquestion)
 
 # Overview
 
@@ -18,7 +19,8 @@ close-to-open.
 
 # Installation
 
-* On Linux, install via [pre-built binaries](https://github.com/kahing/goofys/releases/latest/download/goofys). You may also need to install fuse-utils first.
+* On Linux, install via [pre-built binaries](https://github.com/kahing/goofys/releases/latest/download/goofys). 
+You may also need to install fuse too if you want to mount it on startup.
 
 * On macOS, install via [Homebrew](https://brew.sh/):
 
@@ -100,9 +102,6 @@ List of non-POSIX behaviors/limitations:
   * `unlink` returns success even if file is not present
   * `fsync` is ignored, files are only flushed on `close`
 
-In addition to the items above, the following are supportable but not yet implemented:
-  * creating files larger than 1TB
-
 ## Compatibility with non-AWS S3
 
 goofys has been tested with the following non-AWS S3 providers:
@@ -115,6 +114,7 @@ goofys has been tested with the following non-AWS S3 providers:
 * Minio (limited)
 * OpenStack Swift
 * S3Proxy
+* Scaleway
 * Wasabi
 
 Additionally, goofys also works with the following non-S3 object stores:

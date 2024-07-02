@@ -27,8 +27,8 @@ import (
 	"syscall"
 	"time"
 
+	uuid "github.com/gofrs/uuid"
 	"github.com/jacobsa/fuse"
-	uuid "github.com/satori/go.uuid"
 	"github.com/sirupsen/logrus"
 
 	adl "github.com/Azure/azure-sdk-for-go/services/datalake/store/2016-11-01/filesystem"
@@ -352,8 +352,8 @@ func (b *ADLv1) ListBlobs(param *ListBlobsInput) (*ListBlobsOutput, error) {
 		continuationToken = param.StartAfter
 	}
 
-	_, prefixes, items, err := b.appendToListResults(nilStr(param.Prefix),
-		recursive, nilStr(continuationToken), param.MaxKeys, nil, nil)
+	_, prefixes, items, err := b.appendToListResults(NilStr(param.Prefix),
+		recursive, NilStr(continuationToken), param.MaxKeys, nil, nil)
 	if err == fuse.ENOENT {
 		err = nil
 	} else if err != nil {

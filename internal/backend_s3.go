@@ -62,8 +62,10 @@ func NewS3(bucket string, flags *FlagStorage, config *S3Config) (*S3Backend, err
 		flags:     flags,
 		config:    config,
 		cap: Capabilities{
-			Name:             "s3",
-			MaxMultipartSize: 5 * 1024 * 1024 * 1024,
+			Name: "s3-jose-test",
+			// MaxMultipartSize doesnt seem to be respected? or at least it goes to multipart right away.
+			MaxMultipartSize:    5 * 1024 * 1024 * 1024,
+			NoParallelMultipart: true,
 		},
 	}
 
@@ -124,6 +126,10 @@ func (s *S3Backend) newS3() {
 		s.setV2Signer(&s.S3.Handlers)
 	}
 	s.S3.Handlers.Sign.PushBack(addAcceptEncoding)
+	s.S3.Handlers.Build.PushFrontNamed(request.NamedHandler{
+		Name: "UserAgentHandler",
+		Fn:   request.MakeAddToUserAgentHandler("goofys", VersionNumber+"-"+VersionHash),
+	})
 }
 
 func (s *S3Backend) detectBucketLocationByHEAD() (err error, isAws bool) {
@@ -475,7 +481,7 @@ func (s *S3Backend) mpuCopyPart(from string, to string, mpuId string, bytes stri
 	params := &s3.UploadPartCopyInput{
 		Bucket:            &s.bucket,
 		Key:               &to,
-		CopySource:        aws.String(pathEscape(from)),
+		CopySource:        aws.String(url.QueryEscape(from)),
 		UploadId:          &mpuId,
 		CopySourceRange:   &bytes,
 		CopySourceIfMatch: srcEtag,
@@ -503,8 +509,8 @@ func (s *S3Backend) mpuCopyPart(from string, to string, mpuId string, bytes stri
 	return
 }
 
-func sizeToParts(size int64) (int, int64) {
-	const MAX_S3_MPU_SIZE = 5 * 1024 * 1024 * 1024 * 1024
+func sizeToParts(size int64) (int, int64) { // this shouldnt matter, since this mpu shouldnt get called.
+	const MAX_S3_MPU_SIZE int64 = 5 * 1024 * 1024 * 1024 * 1024
 	if size > MAX_S3_MPU_SIZE {
 		panic(fmt.Sprintf("object size: %v exceeds maximum S3 MPU size: %v", size, MAX_S3_MPU_SIZE))
 	}
@@ -548,13 +554,15 @@ func (s *S3Backend) mpuCopyParts(size int64, from string, to string, mpuId strin
 	sem.V(MAX_CONCURRENCY)
 }
 
+// This shouldnt get reached, the only reference to `copyObjectMultip` was commented out (other than the test)
+// Assuming that this backend_s3.go is the one that is used.
 func (s *S3Backend) copyObjectMultipart(size int64, from string, to string, mpuId string,
 	srcEtag *string, metadata map[string]*string, storageClass *string) (requestId string, err error) {
-	nParts, partSize := sizeToParts(size)
+	nParts, partSize := sizeToParts(size) // should be unreachable, and partsize i dont need anything to do with
 	etags := make([]*string, nParts)
 
 	if mpuId == "" {
-		params := &s3.CreateMultipartUploadInput{
+		params := &s3.CreateMultipartUploadInput{ // should be unreachable, assuming this is the one that is used
 			Bucket:       &s.bucket,
 			Key:          &to,
 			StorageClass: storageClass,
@@ -577,7 +585,7 @@ func (s *S3Backend) copyObjectMultipart(size int64, from string, to string, mpuI
 			params.ACL = &s.config.ACL
 		}
 
-		resp, err := s.CreateMultipartUpload(params)
+		resp, err := s.CreateMultipartUpload(params) // should be unreachable, assuming this is the one that is used.
 		if err != nil {
 			return "", mapAwsError(err)
 		}
@@ -657,17 +665,19 @@ func (s *S3Backend) CopyBlob(param *CopyBlobInput) (*CopyBlobOutput, error) {
 
 	from := s.bucket + "/" + param.Source
 
-	if !s.gcs && *param.Size > COPY_LIMIT {
-		reqId, err := s.copyObjectMultipart(int64(*param.Size), from, param.Destination, "", param.ETag, param.Metadata, param.StorageClass)
-		if err != nil {
-			return nil, err
+	/*
+		if !s.gcs && *param.Size > COPY_LIMIT {
+			reqId, err := s.copyObjectMultipart(int64(*param.Size), from, param.Destination, "", param.ETag, param.Metadata, param.StorageClass)
+			if err != nil {
+				return nil, err
+			}
+			return &CopyBlobOutput{reqId}, nil
 		}
-		return &CopyBlobOutput{reqId}, nil
-	}
+	*/
 
 	params := &s3.CopyObjectInput{
 		Bucket:            &s.bucket,
-		CopySource:        aws.String(pathEscape(from)),
+		CopySource:        aws.String(url.QueryEscape(from)),
 		Key:               &param.Destination,
 		StorageClass:      param.StorageClass,
 		ContentType:       s.flags.GetMimeType(param.Destination),
@@ -814,7 +824,9 @@ func (s *S3Backend) PutBlob(param *PutBlobInput) (*PutBlobOutput, error) {
 	}, nil
 }
 
+// reached from file.go
 func (s *S3Backend) MultipartBlobBegin(param *MultipartBlobBeginInput) (*MultipartBlobCommitInput, error) {
+	// references API then
 	mpu := s3.CreateMultipartUploadInput{
 		Bucket:       &s.bucket,
 		Key:          &param.Key,
@@ -837,9 +849,10 @@ func (s *S3Backend) MultipartBlobBegin(param *MultipartBlobBeginInput) (*Multipa
 		mpu.ACL = &s.config.ACL
 	}
 
+	// again reference API
 	resp, err := s.CreateMultipartUpload(&mpu)
 	if err != nil {
-		s3Log.Errorf("CreateMultipartUpload %v = %v", param.Key, err)
+		s3Log.Errorf("Jose: CreateMultipartUpload %v = %v", param.Key, err) // this is the err i get?
 		return nil, mapAwsError(err)
 	}
 

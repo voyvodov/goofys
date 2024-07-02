@@ -34,8 +34,9 @@ import (
 	"github.com/jacobsa/fuse/fuseops"
 	"github.com/jacobsa/fuse/fuseutil"
 
-	"github.com/sirupsen/logrus"
 	"net/http"
+
+	"github.com/sirupsen/logrus"
 )
 
 // goofys is a Filey System written in Go. All the backend data is
@@ -55,7 +56,7 @@ type Goofys struct {
 
 	umask uint32
 
-	gcs       bool
+	gcsS3     bool
 	rootAttrs InodeAttributes
 
 	bufferPool *BufferPool
@@ -114,6 +115,8 @@ func NewBackend(bucket string, flags *FlagStorage) (cloud StorageBackend, err er
 		} else {
 			cloud, err = NewS3(bucket, flags, config)
 		}
+	} else if config, ok := flags.Backend.(*GCSConfig); ok {
+		cloud, err = NewGCS(bucket, config)
 	} else {
 		err = fmt.Errorf("Unknown backend config: %T", flags.Backend)
 	}
@@ -197,7 +200,7 @@ func newGoofys(ctx context.Context, bucket string, flags *FlagStorage,
 		log.Errorf("Unable to setup backend: %v", err)
 		return nil
 	}
-	_, fs.gcs = cloud.Delegate().(*GCS3)
+	_, fs.gcsS3 = cloud.Delegate().(*GCS3)
 
 	randomObjectName := prefix + (RandStringBytesMaskImprSrc(32))
 	err = cloud.Init(randomObjectName)
@@ -571,13 +574,6 @@ func mapAwsError(err error) error {
 	}
 }
 
-// note that this is NOT the same as url.PathEscape in golang 1.8,
-// as this preserves / and url.PathEscape converts / to %2F
-func pathEscape(path string) string {
-	u := url.URL{Path: path}
-	return u.EscapedPath()
-}
-
 func (fs *Goofys) allocateInodeId() (id fuseops.InodeID) {
 	id = fs.nextInodeID
 	fs.nextInodeID++
@@ -880,7 +876,7 @@ func (fs *Goofys) OpenFile(
 	in := fs.getInodeOrDie(op.Inode)
 	fs.mu.RUnlock()
 
-	fh, err := in.OpenFile(op.Metadata)
+	fh, err := in.OpenFile(op.OpContext)
 	if err != nil {
 		return
 	}
@@ -953,7 +949,7 @@ func (fs *Goofys) FlushFile(
 	// This check helps us with scenarios like https://github.com/kahing/goofys/issues/273
 	// Also see goofys_test.go:TestClientForkExec.
 	if fh.Tgid != nil {
-		tgid, err := GetTgid(op.Metadata.Pid)
+		tgid, err := GetTgid(op.OpContext.Pid)
 		if err != nil {
 			fh.inode.logFuse("<-- FlushFile",
 				fmt.Sprintf("Failed to retrieve tgid from op.Metadata.Pid. FlushFileOp:%#v, err:%v",
@@ -1013,7 +1009,7 @@ func (fs *Goofys) CreateFile(
 	parent := fs.getInodeOrDie(op.Parent)
 	fs.mu.RUnlock()
 
-	inode, fh := parent.Create(op.Name, op.Metadata)
+	inode, fh := parent.Create(op.Name, op.OpContext)
 
 	parent.mu.Lock()
 
