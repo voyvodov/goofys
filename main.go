@@ -231,7 +231,8 @@ func main() {
 				// Write out a Pid file
 				err = ioutil.WriteFile(flags.PidFile, []byte(strconv.Itoa(os.Getpid())), 0644)
 				if err != nil {
-					log.Fatalf("Error writing pid file: %v", err)
+					//log.Fatalf("Error writing pid file: %v", err)
+					log.Printf("Error writing pid file: %v", err)
 				}
 			}
 
@@ -255,8 +256,9 @@ func main() {
 	err := app.Run(MassageMountFlags(os.Args))
 	if err != nil {
 		if flags != nil && !flags.Foreground && child != nil {
-			log.Fatalln("Unable to mount file system, see syslog for details")
+			//log.Fatalln("Unable to mount file system, see syslog for details")
+			log.Println("Unable to mount file system, see syslog for details")
 		}
-		os.Exit(1)
+		//os.Exit(1)
 	}
 }
