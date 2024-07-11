@@ -66,4 +66,3 @@ jobs:
       run: |
         docker pull localhost:5000/mfcp-proxy-goofys-multi-inc:${{ github.sha }}
         docker tag localhost:5000/mfcp-proxy-goofys-multi-inc:${{ github.sha }} ${{ env.REGISTRY_NAME }}/mfcp-proxy-goofys-multi-inc:${{ github.sha }}
-        docker push ${{ env.REGISTRY_NAME }}/mfcp-proxy-goofys-multi-inc:${{ github.sha }}
