@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package fusermount3proxy
+package main
 
 import (
 	"fmt"
@@ -22,8 +22,8 @@ import (
 	"strconv"
 	"syscall"
 
-	starter "github.com/StatCan/goofys/meta-fuse-csi-plugin/pkg/fuse_starter"
-	"github.com/StatCan/goofys/meta-fuse-csi-plugin/pkg/util"
+	starter "github.com/pfnet-research/meta-fuse-csi-plugin/pkg/fuse_starter"
+	"github.com/pfnet-research/meta-fuse-csi-plugin/pkg/util"
 	flag "github.com/spf13/pflag"
 
 	"k8s.io/klog/v2"
