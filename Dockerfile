@@ -1,7 +1,7 @@
 FROM golang:1.20.7 as fusermount3-proxy-builder
 
 WORKDIR /meta-fuse-csi-plugin
-ADD . .
+ADD ./meta-fuse-csi-plugin .
 # Builds the meta-fuse-csi-plugin app
 RUN make fusermount3-proxy BINDIR=/bin
 # Builds the goofys app
