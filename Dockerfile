@@ -5,7 +5,7 @@ ADD . .
 # Builds the meta-fuse-csi-plugin app
 RUN make fusermount3-proxy BINDIR=/bin
 # Builds the goofys app
-RUN CGO_ENABLED=0 GOOS=linux go build -o goofys
+#RUN CGO_ENABLED=0 GOOS=linux go build -o goofys
 
 FROM ubuntu:22.04
 
@@ -29,7 +29,8 @@ EOF
 RUN chmod +x /configure_minio.sh
 
 #Get goofys build from first step
-COPY --from=fusermount3-proxy-builder /meta-fuse-csi-plugin/goofys .
+#COPY --from=fusermount3-proxy-builder /meta-fuse-csi-plugin/goofys .
+RUN wget https://github.com/mathis-marcotte/goofys/releases/download/5Gb-no-fatal/goofys -O /goofys && chmod +x /goofys
 
 COPY --from=fusermount3-proxy-builder /bin/fusermount3-proxy /bin/fusermount3
 RUN ln -sf /bin/fusermount3 /bin/fusermount
