@@ -1,4 +1,4 @@
-module github.com/pfnet-research/meta-fuse-csi-plugin
+module github.com/StatCan/goofys/meta-fuse-csi-plugin
 go 1.20
 
 require k8s.io/klog/v2 v2.100.1
