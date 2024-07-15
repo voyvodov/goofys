@@ -26,7 +26,7 @@ import (
 	"os/exec"
 	"syscall"
 
-	"github.com/pfnet-research/meta-fuse-csi-plugin/pkg/util"
+	"github.com/StatCan/goofys/meta-fuse-csi-plugin/pkg/util"
 	"k8s.io/klog/v2"
 )
 
