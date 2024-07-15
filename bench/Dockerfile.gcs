@@ -24,7 +24,7 @@ RUN apt-get update && \
             && apt-get clean
 
 # install catfs, required to run goofys with cache
-RUN curl -L -O https://github.com/StatCan/catfs/releases/download/v0.8.0/catfs && \
+RUN curl -L -O https://github.com/kahing/catfs/releases/download/v0.8.0/catfs && \
     mv catfs /usr/bin && chmod 0755 /usr/bin/catfs
 
 # goofys graph generation
