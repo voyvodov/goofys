@@ -9,9 +9,6 @@ FROM golang:1.20.7 as goofys-builder
 
 WORKDIR /goofys
 ADD . .
-# Removes unecessary files
-# RUN rm -rf meta-fuse-csi-plugin
-# RUN rm go.work go.work.sum
 # Builds the goofys app
 RUN make build
 
