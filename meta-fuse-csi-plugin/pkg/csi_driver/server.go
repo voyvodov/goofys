@@ -22,8 +22,8 @@ import (
 	"net"
 	"sync"
 
+	"github.com/StatCan/goofys/meta-fuse-csi-plugin/pkg/util"
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
-	"github.com/pfnet-research/meta-fuse-csi-plugin/pkg/util"
 	"google.golang.org/grpc"
 	"k8s.io/klog/v2"
 )

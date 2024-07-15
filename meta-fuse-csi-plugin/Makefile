@@ -23,7 +23,7 @@ DRIVER_BINARY = meta-fuse-csi-plugin
 STARTER_BINARY = fuse-starter
 FUSERMOUNT3PROXY_BINARY = fusermount3-proxy
 
-REGISTRY ?= ghcr.io/pfnet-research/meta-fuse-csi-plugin
+REGISTRY ?= ghcr.io/StatCan/goofys/meta-fuse-csi-plugin
 DRIVER_IMAGE = ${REGISTRY}/${DRIVER_BINARY}
 STARTER_IMAGE = ${REGISTRY}/${STARTER_BINARY}
 EXAMPLE_IMAGE = ${REGISTRY}/mfcp-example
