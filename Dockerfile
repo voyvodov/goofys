@@ -13,7 +13,7 @@ ADD . .
 # RUN rm -rf meta-fuse-csi-plugin
 # RUN rm go.work go.work.sum
 # Builds the goofys app
-RUN CGO_ENABLED=0 GOOS=linux go build -o goofys
+RUN make build
 
 FROM ubuntu:22.04
 
