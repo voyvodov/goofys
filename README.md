@@ -123,6 +123,11 @@ Additionally, goofys also works with the following non-S3 object stores:
 * Azure Data Lake Gen1
 * Azure Data Lake Gen2
 
+## Integration with [meta-fuse-csi-plugin](https://github.com/pfnet-research/meta-fuse-csi-plugin/tree/main)
+
+This repository also contains files from the the meta-fuse-csi-plugin repository with more information being found [here](https://github.com/StatCan/aaw/blob/master/docs/dev/features/netapp-mounting/overview.md#integration-with-netapp). The initial commit to add them is [here](https://github.com/StatCan/goofys/commit/9db676b41fd4546c06d7fd1df6afbac44d29bde5) with subsequent commits refining the process.
+The purpose of this was to [simplify the process described here](https://github.com/StatCan/aaw/blob/master/docs/dev/features/netapp-mounting/overview.md#deployment-checklist).
+
 # References
 
   * Data is stored on [Amazon S3](https://aws.amazon.com/s3/)
