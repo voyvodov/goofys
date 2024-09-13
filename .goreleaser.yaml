@@ -5,7 +5,7 @@ before:
 builds:
   -
     binary: goofys
-    ldflags: -s -w -X main.Version={{.Tag}}
+    ldflags: -s -w -X=github.com/kahing/goofys/internal.VersionNumber={{.Tag}} -X=github.com/kahing/goofys/internal.VersionHash={{ .ShortCommit }}
     env:
       - CGO_ENABLED=0
     goos:

@@ -1,5 +1,10 @@
 export CGO_ENABLED=0
 
+VERSION := `git describe --abbrev=0 --tags || echo "0.0.0"`
+BUILD := `git rev-parse --short HEAD`
+LDFLAGS=-ldflags "-X=github.com/kahing/goofys/internal.VersionNumber=$(VERSION) -X=github.com/kahing/goofys/internal.VersionHash=$(BUILD)"
+
+
 semgrep ?= -
 ifeq (,$(shell which semgrep))
 	semgrep=echo "-- Running inside Docker --"; docker run --rm -v $$(pwd):/src returntocorp/semgrep:1.65.0 semgrep
@@ -17,10 +22,10 @@ get-deps: s3proxy.jar
 	go get -t ./...
 
 build:
-	go build -ldflags "-X main.Version=`git rev-parse HEAD`"
+	go build ${LDFLAGS}
 
 install:
-	go install -ldflags "-X main.Version=`git rev-parse HEAD`"
+	go install ${LDFLAGS}
 
 ##@ Bootstrap
 # See following issues for why errors are ignored with `-e` flag:
