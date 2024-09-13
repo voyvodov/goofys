@@ -194,6 +194,9 @@ func main() {
 				kill(os.Getpid(), syscall.SIGUSR1)
 				wg.Wait()
 				defer ctx.Release()
+
+				// Signal parent process since we are taking over
+				_ = kill(os.Getppid(), syscall.SIGUSR1)
 			}
 
 		} else {
@@ -209,17 +212,11 @@ func main() {
 			flags)
 
 		if err != nil {
-			if !flags.Foreground {
-				kill(os.Getppid(), syscall.SIGUSR2)
-			}
-			// log.Fatalf("Mounting file system: %v", err)
+			log.Fatalf("Mounting file system: %v", err)
 			// fatal also terminates itself
 			log.Printf("Mounting file system: %v", err)
 			return
 		} else {
-			if !flags.Foreground {
-				kill(os.Getppid(), syscall.SIGUSR1)
-			}
 			log.Println("File system has been successfully mounted.")
 
 			if flags.PidFile != "" {
