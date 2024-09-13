@@ -36,6 +36,8 @@ type FileHandle struct {
 	writeInit sync.Once
 	mpuWG     sync.WaitGroup
 
+	writeCachePurgeInit sync.Once // purge the read cache of this file
+
 	mu              sync.Mutex
 	mpuID           *MultipartBlobCommitInput
 	nextWriteOffset int64
@@ -50,11 +52,16 @@ type FileHandle struct {
 	reader        io.ReadCloser
 	readBufOffset int64
 
+	blockCacheLastOffset       int64
+	blockCacheReadAheadEnabled bool
+
 	// parallel read
-	buffers           []*S3ReadBuffer
+	buffers           []*S3ReadBuffer // prefetch buffers
 	existingReadahead int
 	seqReadAmount     uint64
 	numOOORead        uint64 // number of out of order read
+	numOOOPrefetch    uint64 // number of out of order read with prefetch
+	numOOOReadReq     uint64 // number of out of order read requests
 	// User space PID. All threads created by a process will have the same TGID,
 	// but different PIDs[1].
 	// This value can be nil if we fail to get TGID from PID[2].
@@ -73,7 +80,7 @@ const readAheadChunk = uint32(20 * 1024 * 1024)
 func NewFileHandle(inode *Inode, opMetadata fuseops.OpContext) *FileHandle {
 	tgid, err := GetTgid(opMetadata.Pid)
 	if err != nil {
-		log.Debugf(
+		fuseLog.Debugf(
 			"Failed to retrieve tgid for the given pid. pid: %v err: %v inode id: %v err: %v",
 			opMetadata.Pid, err, inode.ID, err)
 	}
@@ -283,6 +290,13 @@ func (fh *FileHandle) uploadCurrentBuf(parallel bool) (err error) {
 
 func (fh *FileHandle) WriteFile(offset int64, data []byte) (err error) {
 	fh.inode.logFuse("WriteFile", offset, len(data))
+
+	fh.writeCachePurgeInit.Do(func() {
+		bc := fh.inode.fs.blockCache
+		if bc != nil {
+			go bc.RemoveCache(fh.inode)
+		}
+	})
 
 	fh.mu.Lock()
 	defer fh.mu.Unlock()
@@ -503,6 +517,7 @@ func (fh *FileHandle) readFromReadAhead(offset uint64, buf []byte) (bytesRead in
 			// we've exhausted the first buffer
 			readAheadBuf.buf.Close()
 			fh.buffers = fh.buffers[1:]
+			fh.numOOOPrefetch = 0 // clear the counter after reading one buffer
 		}
 
 		buf = buf[nread:]
@@ -517,8 +532,16 @@ func (fh *FileHandle) readFromReadAhead(offset uint64, buf []byte) (bytesRead in
 }
 
 func (fh *FileHandle) readAhead(offset uint64, needAtLeast int) (err error) {
+	expectOffset := offset
 	existingReadahead := uint32(0)
-	for _, b := range fh.buffers {
+	for bidx, b := range fh.buffers {
+		if b.offset != expectOffset {
+			err = fmt.Errorf(
+				"read ahead buffer offset mismatch: file=%s buf=%v expect=%v got=%v",
+				*fh.inode.FullName(), bidx, expectOffset, b.offset)
+			return
+		}
+		expectOffset += uint64(b.size)
 		existingReadahead += b.size
 	}
 
@@ -589,15 +612,99 @@ func (fh *FileHandle) ReadFile(offset int64, buf []byte) (bytesRead int, err err
 	return
 }
 
-func (fh *FileHandle) readFile(offset int64, buf []byte) (bytesRead int, err error) {
-	defer func() {
-		if bytesRead > 0 {
-			fh.readBufOffset += int64(bytesRead)
-			fh.seqReadAmount += uint64(bytesRead)
-		}
+func (fh *FileHandle) readFileBlockCache(
+	offset int64, buf []byte) (bytesRead int, err error) {
+	bytesRead = 0
+	err = nil
 
-		fh.inode.logFuse("< readFile", bytesRead, err)
-	}()
+	if offset < 0 || uint64(offset) >= fh.inode.Attributes.Size {
+		// nothing to read
+		if fh.inode.Invalid {
+			err = fuse.ENOENT
+		} else if fh.inode.KnownSize == nil {
+			err = io.EOF
+		} else {
+			err = io.EOF
+		}
+		return
+	}
+
+	bc := fh.inode.fs.blockCache
+	cache, cacheOff := bc.Get(fh, uint64(offset))
+	if cache.Err != nil {
+		err = cache.Err
+		fuseLog.Errorf("readFileBlockCache (%s: %v(+%v)/%v): %v",
+			*fh.inode.FullName(), offset, len(buf), fh.inode.Attributes.Size,
+			err)
+		return
+	}
+
+	cachedData := cache.Data[offset-int64(cacheOff):]
+	bytesRead = MinInt(len(cachedData), len(buf))
+	assert(bytesRead > 0, "zero bytes read")
+	copy(buf[:bytesRead], cachedData[:bytesRead])
+
+	if AbsInt64(offset-fh.blockCacheLastOffset) < int64(bc.blockSize)*2 {
+		fh.seqReadAmount += uint64(bytesRead)
+		if fh.seqReadAmount >= uint64(readAheadChunk) {
+			if !fh.blockCacheReadAheadEnabled {
+				fh.blockCacheReadAheadEnabled = true
+				fuseLog.Infof("enable block cache read ahead for %s",
+					*fh.inode.FullName())
+			}
+		}
+	} else {
+		fh.seqReadAmount = 0
+		if fh.blockCacheReadAheadEnabled {
+			fh.blockCacheReadAheadEnabled = false
+			fuseLog.Infof("disable block cache read ahead for %s",
+				*fh.inode.FullName())
+		}
+	}
+	fh.blockCacheLastOffset = offset + int64(bytesRead)
+	if fh.blockCacheReadAheadEnabled {
+		fh.startBlockCacheReadAhead(uint64(offset))
+	}
+
+	return
+}
+
+func (fh *FileHandle) startBlockCacheReadAhead(offset uint64) {
+	CHUNK := uint64(readAheadChunk)
+	offset = (offset + CHUNK - 1) / CHUNK * CHUNK
+	maxOffset := MinUInt64(
+		fh.inode.Attributes.Size, offset+uint64(maxReadAhead))
+	bc := fh.inode.fs.blockCache
+	for offset+CHUNK <= maxOffset {
+		if !bc.StartReadAhead(fh, offset, CHUNK) {
+			return
+		}
+		offset += CHUNK
+	}
+}
+
+// close all readahead buffers and clear the buffer varaible
+func (fh *FileHandle) closeAllBuffers() {
+	if fh.buffers != nil {
+		for _, b := range fh.buffers {
+			b.buf.Close()
+		}
+		fh.buffers = nil
+	}
+}
+
+func (fh *FileHandle) readFile(offset int64, buf []byte) (bytesRead int, err error) {
+	fs := fh.inode.fs
+
+	if fs.blockCache != nil {
+		return fh.readFileBlockCache(offset, buf)
+	}
+
+	if fs.flags.DebugFuse {
+		defer func() {
+			fh.inode.logFuse("< readFile", bytesRead, err)
+		}()
+	}
 
 	if uint64(offset) >= fh.inode.Attributes.Size {
 		// nothing to read
@@ -611,35 +718,12 @@ func (fh *FileHandle) readFile(offset int64, buf []byte) (bytesRead int, err err
 		return
 	}
 
-	fs := fh.inode.fs
-
 	if fh.poolHandle == nil {
 		fh.poolHandle = fs.bufferPool
 	}
 
-	if fh.readBufOffset != offset {
-		// XXX out of order read, maybe disable prefetching
-		fh.inode.logFuse("out of order read", offset, fh.readBufOffset)
-
-		fh.readBufOffset = offset
-		fh.seqReadAmount = 0
-		if fh.reader != nil {
-			fh.reader.Close()
-			fh.reader = nil
-		}
-
-		if fh.buffers != nil {
-			// we misdetected
-			fh.numOOORead++
-		}
-
-		for _, b := range fh.buffers {
-			b.buf.Close()
-		}
-		fh.buffers = nil
-	}
-
-	if !fs.flags.Cheap && fh.seqReadAmount >= uint64(readAheadChunk) && fh.numOOORead < 3 {
+	if !fs.flags.Cheap && fh.seqReadAmount >= uint64(readAheadChunk) &&
+		fh.numOOOPrefetch < 3 {
 		if fh.reader != nil {
 			fh.inode.logFuse("cutover to the parallel algorithm")
 			fh.reader.Close()
@@ -652,26 +736,20 @@ func (fh *FileHandle) readFile(offset int64, buf []byte) (bytesRead int, err err
 			return
 		} else {
 			// fall back to read serially
-			fh.inode.logFuse("not enough memory, fallback to serial read")
+			fuseLog.Errorf("read ahead failed: %v; fallback to serial read", err)
 			fh.seqReadAmount = 0
-			for _, b := range fh.buffers {
-				b.buf.Close()
-			}
-			fh.buffers = nil
+			fh.closeAllBuffers()
 		}
 	}
 
-	bytesRead, err = fh.readFromStream(offset, buf)
+	bytesRead, err = fh.readFromUpstream(offset, buf)
 
 	return
 }
 
 func (fh *FileHandle) Release() {
 	// read buffers
-	for _, b := range fh.buffers {
-		b.buf.Close()
-	}
-	fh.buffers = nil
+	fh.closeAllBuffers()
 
 	if fh.reader != nil {
 		fh.reader.Close()
@@ -698,16 +776,39 @@ func (fh *FileHandle) Release() {
 	}
 }
 
-func (fh *FileHandle) readFromStream(offset int64, buf []byte) (bytesRead int, err error) {
+// read from upstream, maintaining fh.reader related states
+func (fh *FileHandle) readFromUpstream(
+	offset int64, buf []byte) (bytesRead int, err error) {
 	defer func() {
 		if fh.inode.fs.flags.DebugFuse {
-			fh.inode.logFuse("< readFromStream", bytesRead)
+			fh.inode.logFuse("< readFromUpstream", bytesRead)
+		}
+
+		if bytesRead > 0 {
+			fh.readBufOffset += int64(bytesRead)
+			fh.seqReadAmount += uint64(bytesRead)
 		}
 	}()
 
 	if uint64(offset) >= fh.inode.Attributes.Size {
 		// nothing to read
 		return
+	}
+
+	if fh.readBufOffset != offset && fh.reader != nil {
+		// XXX out of order read, maybe disable prefetching
+		fh.inode.logFuse("out of order read", offset, fh.readBufOffset)
+
+		fh.reader.Close()
+		fh.reader = nil
+
+		fh.numOOOReadReq++
+
+		if fh.buffers != nil {
+			// we misdetected
+			fh.numOOOPrefetch++
+			fh.closeAllBuffers()
+		}
 	}
 
 	if fh.reader == nil {
@@ -720,6 +821,8 @@ func (fh *FileHandle) readFromStream(offset int64, buf []byte) (bytesRead int, e
 		}
 
 		fh.reader = resp.Body
+		fh.readBufOffset = offset
+		fh.seqReadAmount = 0
 	}
 
 	bytesRead, err = fh.reader.Read(buf)
