@@ -1,29 +1,40 @@
-FROM golang:1.20.7 as fusermount3-proxy-builder
+FROM golang:1.20.7-alpine AS fusermount3-proxy-builder
+
+# Install required build dependencies
+RUN apk update && apk upgrade && apk --no-cache add make gcc g++ libc-dev fuse-dev
 
 WORKDIR /meta-fuse-csi-plugin
 ADD ./meta-fuse-csi-plugin .
-# Builds the meta-fuse-csi-plugin app
+# Build the fusermount3-proxy
 RUN make fusermount3-proxy BINDIR=/bin
 
-FROM golang:1.20.7 as goofys-builder
+FROM golang:1.20.7-alpine AS goofys-builder
+
+# Install required build dependencies
+RUN apk update && apk upgrade && apk --no-cache add git make gcc g++ libc-dev fuse-dev
 
 WORKDIR /goofys
 ADD . .
-# Builds the goofys app
+# Build the goofys app
 RUN make build
 
-FROM ubuntu:22.04
+# 3.20.3 is the latest as of this commit (September 09 2024)
+FROM alpine:3.20.3
 
-RUN apt update && apt upgrade -y
-RUN apt install -y ca-certificates wget libfuse2 fuse3
+# Install necessary runtime dependencies
+RUN apk update && apk upgrade && apk --no-cache add ca-certificates bash wget
 
-# prepare for MinIO
-RUN wget https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/bin/mc && chmod +x /usr/bin/mc
+# Download MinIO client (mc)
+RUN wget https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/bin/mc && \
+    chmod +x /usr/bin/mc && \
+    apk del wget && rm -rf /var/cache/apk/*
 
+# Copy the test file
 COPY <<EOF /test.txt
 This is a test file for minio
 EOF
 
+# Copy and configure MinIO
 COPY <<EOF /configure_minio.sh
 #!/bin/bash
 set -eux
@@ -33,8 +44,9 @@ set -eux
 EOF
 RUN chmod +x /configure_minio.sh
 
-#Get goofys build from first step
+# Get goofys build from the build stage
 COPY --from=goofys-builder /goofys/goofys .
 
-COPY --from=fusermount3-proxy-builder /bin/fusermount3-proxy /bin/fusermount3
-RUN ln -sf /bin/fusermount3 /bin/fusermount
+# Get fusermount3-proxy from the build stage and set up symlink
+COPY --from=fusermount3-proxy-builder /bin/fusermount3-proxy /usr/bin/fusermount3
+RUN ln -sf /usr/bin/fusermount3 /bin/fusermount
