@@ -1,5 +1,12 @@
 export CGO_ENABLED=0
 
+semgrep ?= -
+ifeq (,$(shell which semgrep))
+	semgrep=echo "-- Running inside Docker --"; docker run --rm -v $$(pwd):/src returntocorp/semgrep:1.65.0 semgrep
+else
+	semgrep=semgrep
+endif
+
 run-test: s3proxy.jar
 	./test/run-tests.sh
 
@@ -14,3 +21,42 @@ build:
 
 install:
 	go install -ldflags "-X main.Version=`git rev-parse HEAD`"
+
+##@ Bootstrap
+# See following issues for why errors are ignored with `-e` flag:
+# 	* https://github.com/golang/go/issues/61857
+# 	* https://github.com/golang/go/issues/59186
+.PHONY: bootstrap
+bootstrap: ## Install tooling
+	@go install $$(go list -e -f '{{join .Imports " "}}' ./internal/tools/tools.go)
+
+.PHONY: check
+check: staticcheck unparam semgrep check-fmt check-codegen check-gomod
+
+.PHONY: staticcheck
+staticcheck:
+	@staticcheck -checks 'all,-ST1000' ./...
+
+.PHONY: unparam
+unparam:
+	@unparam ./...
+
+.PHONY: semgrep
+semgrep: ## Run semgrep
+	@$(semgrep) --quiet --metrics=off --error --config="r/dgryski.semgrep-go" --config .github/semgrep-rules.yaml .
+
+.PHONY: check-fmt
+check-fmt:
+	@if [ $$(go fmt -mod=vendor ./...) ]; then\
+		echo "Go code is not formatted";\
+		exit 1;\
+	fi
+
+.PHONY: check-codegen
+check-codegen: gogenerate ## Check generated code is up-to-date
+	@git diff --exit-code --
+
+.PHONY: check-gomod
+check-gomod: ## Check go.mod file
+	@go mod tidy
+	@git diff --exit-code -- go.sum go.mod
