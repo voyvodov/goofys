@@ -1,0 +1,50 @@
+before:
+  hooks:
+    - make get-deps
+    - make build
+builds:
+  -
+    binary: goofys
+    ldflags: -s -w -X main.Version={{.Tag}}
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+
+archives:
+  - name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
+    replacements:
+      darwin: macOS
+      linux: Linux
+      windows: Windows
+      386: 32bit
+      amd64: 64bit
+
+checksum:
+  name_template: '{{ .ProjectName }}_checksums.txt'
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - Merge pull request
+      - Merge branch
+
+nfpms:
+  -
+    vendor: Red Sift Ltd.
+    license: Apache
+    maintainer: Red Sift <operations@redsift.io>
+    description: |-
+      Goofys allows you to mount an S3 bucket as a filey system.
+      It's a Filey System instead of a File System because goofys strives for 
+      performance first and POSIX second. 
+      Particularly things that are difficult to support on S3 or would translate into 
+      more than one round-trip would either fail (random writes) or faked (no per-file permission).
+      Goofys does not have an on disk data cache (checkout catfs), and consistency model is close-to-open.
+    formats:
+      - deb
