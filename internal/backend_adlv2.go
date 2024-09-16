@@ -50,8 +50,8 @@ type ADLv2 struct {
 	bucket string
 }
 
-const ADL2_CLIENT_REQUEST_ID = "X-Ms-Client-Request-Id"
-const ADL2_REQUEST_ID = "X-Ms-Request-Id"
+const adl2ClientRequestID = "X-Ms-Client-Request-Id"
+const adl2RequestID = "X-Ms-Request-Id"
 
 var adl2Log = GetLogger("adlv2")
 
@@ -71,15 +71,15 @@ func adl2LogResp(level logrus.Level, r *http.Response) {
 	}
 
 	if adl2Log.IsLevelEnabled(level) {
-		requestId := r.Request.Header.Get(ADL2_CLIENT_REQUEST_ID)
-		respId := r.Header.Get(ADL2_REQUEST_ID)
+		requestID := r.Request.Header.Get(adl2ClientRequestID)
+		respID := r.Header.Get(adl2RequestID)
 		// don't log anything if this is being called twice,
 		// which it is via ResponseInspector
-		if respId != "" {
+		if respID != "" {
 			adl2Log.Logf(level, "%v %v %v %v %v", r.Request.Method,
 				r.Request.URL.String(),
-				requestId, r.Status, respId)
-			r.Header.Del(ADL2_REQUEST_ID)
+				requestID, r.Status, respID)
+			r.Header.Del(adl2RequestID)
 		}
 	}
 }
@@ -92,7 +92,7 @@ func NewADLv2(bucket string, flags *FlagStorage, config *ADLv2Config) (*ADLv2, e
 
 	parts := strings.SplitN(u.Hostname(), ".", 2)
 	if len(parts) != 2 {
-		return nil, fmt.Errorf("Invalid endpoint: %v", config.Endpoint)
+		return nil, fmt.Errorf("invalid endpoint: %v", config.Endpoint)
 	}
 	storageAccountName := parts[0]
 	dnsSuffix := parts[1]
@@ -105,7 +105,7 @@ func NewADLv2(bucket string, flags *FlagStorage, config *ADLv2Config) (*ADLv2, e
 
 			r.Header.Set("X-Ms-Date", date)
 			r.Header.Set("X-Ms-Version", "2018-11-09")
-			r.Header.Set(ADL2_CLIENT_REQUEST_ID, uuid.New().String())
+			r.Header.Set(adl2ClientRequestID, uuid.New().String())
 			r.Header.Set("Accept-Charset", "utf-8")
 			r.Header.Set("Content-Type", "")
 			r.Header.Set("Accept", "application/json, application/octet-stream")
@@ -123,16 +123,16 @@ func NewADLv2(bucket string, flags *FlagStorage, config *ADLv2Config) (*ADLv2, e
 			}
 
 			if adl2Log.IsLevelEnabled(logrus.DebugLevel) {
-				requestId := r.Header.Get(ADL2_CLIENT_REQUEST_ID)
+				requestID := r.Header.Get(adl2ClientRequestID)
 				op := r.Method
 				switch op {
 				case http.MethodPost:
 					// this is a lease
 					leaseAction := r.Header.Get("X-Ms-Lease-Action")
-					leaseId := r.Header.Get("X-Ms-Lease-Id")
-					proposeLeaseId := r.Header.Get("X-Ms-Proposed-Lease-Id")
+					leaseID := r.Header.Get("X-Ms-Lease-Id")
+					proposeLeaseID := r.Header.Get("X-Ms-Proposed-Lease-Id")
 					op += fmt.Sprintf(" %v (%v, %v)",
-						leaseAction, leaseId, proposeLeaseId)
+						leaseAction, leaseID, proposeLeaseID)
 				case http.MethodPatch:
 					action := r.URL.Query().Get("action")
 					op += " " + action
@@ -141,7 +141,7 @@ func NewADLv2(bucket string, flags *FlagStorage, config *ADLv2Config) (*ADLv2, e
 					}
 				}
 				adl2Log.Debugf("%v %v %v", op,
-					r.URL.String(), requestId)
+					r.URL.String(), requestID)
 			}
 
 			r, err := p.Prepare(r)
@@ -225,7 +225,7 @@ func adlv2ErrLogHeaders(errCode string, resp *http.Response) {
 	switch errCode {
 	case "MissingRequiredHeader", "UnsupportedHeader":
 		var s strings.Builder
-		for k, _ := range resp.Request.Header {
+		for k := range resp.Request.Header {
 			s.WriteString(k)
 			s.WriteString(" ")
 		}
@@ -290,7 +290,7 @@ func mapADLv2Error(resp *http.Response, err error, rawError bool) error {
 				return syscall.EAGAIN
 			}
 
-			err = mapHttpError(resp.StatusCode)
+			err = mapHTTPError(resp.StatusCode)
 			if err != nil {
 				return err
 			} else {
@@ -354,9 +354,7 @@ func adlv2ToBlobItem(resp *http.Response, key string) BlobItemOutput {
 
 func (b *ADLv2) HeadBlob(param *HeadBlobInput) (*HeadBlobOutput, error) {
 	key := param.Key
-	if strings.HasSuffix(key, "/") {
-		key = key[:len(key)-1]
-	}
+	key = strings.TrimSuffix(key, "/")
 
 	// GetProperties(GetStatus) does not return user defined
 	// properties, despite what the documentation says, use a 0
@@ -424,7 +422,7 @@ func (b *ADLv2) ListBlobs(param *ListBlobsInput) (*ListBlobsOutput, error) {
 	if err != nil {
 		if err == fuse.ENOENT {
 			return &ListBlobsOutput{
-				RequestId: res.Response.Response.Header.Get(ADL2_REQUEST_ID),
+				RequestID: res.Response.Response.Header.Get(adl2RequestID),
 			}, nil
 		} else {
 			return nil, err
@@ -456,7 +454,7 @@ func (b *ADLv2) ListBlobs(param *ListBlobsInput) (*ListBlobsOutput, error) {
 			if strings.HasSuffix(*param.Prefix, "/") {
 				// we asked for a dir and got a file
 				return &ListBlobsOutput{
-					RequestId: res.Response.Response.Header.Get(ADL2_REQUEST_ID),
+					RequestID: res.Response.Response.Header.Get(adl2RequestID),
 				}, nil
 			}
 		}
@@ -491,7 +489,7 @@ func (b *ADLv2) ListBlobs(param *ListBlobsInput) (*ListBlobsOutput, error) {
 		Items:                 items,
 		NextContinuationToken: continuationToken,
 		IsTruncated:           continuationToken != nil,
-		RequestId:             res.Response.Response.Header.Get(ADL2_REQUEST_ID),
+		RequestID:             res.Response.Response.Header.Get(adl2RequestID),
 	}, nil
 }
 
@@ -517,16 +515,14 @@ func (b *ADLv2) RenameBlob(param *RenameBlobInput) (*RenameBlobOutput, error) {
 	var continuation string
 
 	renameDest := param.Destination
-	if strings.HasSuffix(renameDest, "/") {
-		renameDest = renameDest[:len(renameDest)-1]
-	}
+	renameDest = strings.TrimSuffix(renameDest, "/")
+
 	renameSource := param.Source
-	if strings.HasSuffix(renameSource, "/") {
-		renameSource = renameSource[:len(renameSource)-1]
-	}
+	renameSource = strings.TrimSuffix(renameSource, "/")
+
 	renameSource = "/" + b.bucket + "/" + url.PathEscape(renameSource)
 
-	var requestId string
+	var requestID string
 	for cont := true; cont; cont = continuation != "" {
 		res, err := b.client.Create(context.TODO(), b.bucket, renameDest,
 			"", continuation, "", "", "", "", "", "", "", "", "", "",
@@ -537,10 +533,10 @@ func (b *ADLv2) RenameBlob(param *RenameBlobInput) (*RenameBlobOutput, error) {
 		}
 
 		continuation = res.Header.Get("x-ms-continuation")
-		requestId = res.Header.Get(ADL2_REQUEST_ID)
+		requestID = res.Header.Get(adl2RequestID)
 	}
 
-	return &RenameBlobOutput{requestId}, nil
+	return &RenameBlobOutput{requestID}, nil
 }
 
 func (b *ADLv2) CopyBlob(param *CopyBlobInput) (*CopyBlobOutput, error) {
@@ -556,7 +552,7 @@ func (b *ADLv2) CopyBlob(param *CopyBlobInput) (*CopyBlobOutput, error) {
 	}
 
 	return &CopyBlobOutput{
-		RequestId: res.Response.Header.Get(ADL2_REQUEST_ID),
+		RequestID: res.Response.Header.Get(adl2RequestID),
 	}, nil
 }
 
@@ -631,10 +627,10 @@ func (b *ADLv2) toADLProperties(metadata map[string]*string) string {
 }
 
 func (b *ADLv2) create(key string, pathType adl2.PathResourceType, contentType *string,
-	metadata map[string]*string, leaseId string) (resp autorest.Response, err error) {
+	metadata map[string]*string, leaseID string) (resp autorest.Response, err error) {
 	resp, err = b.client.Create(context.TODO(), b.bucket, key,
 		pathType, "", "", "", "", "", "", "", NilStr(contentType),
-		"", "", "", "", leaseId, "", b.toADLProperties(metadata), "", "", "", "", "", "",
+		"", "", "", "", leaseID, "", b.toADLProperties(metadata), "", "", "", "", "", "",
 		"", "", "", "", "", nil, "")
 	if err != nil {
 		err = mapADLv2Error(resp.Response, err, false)
@@ -643,9 +639,9 @@ func (b *ADLv2) create(key string, pathType adl2.PathResourceType, contentType *
 }
 
 func (b *ADLv2) append(key string, offset int64, size int64, body io.ReadSeeker,
-	leaseId string) (resp autorest.Response, err error) {
+	leaseID string) (resp autorest.Response, err error) {
 	resp, err = b.client.Update(context.TODO(), adl2.Append, b.bucket,
-		key, &offset, nil, nil, &size, "", leaseId, "",
+		key, &offset, nil, nil, &size, "", leaseID, "",
 		"", "", "", "", "", "", "", "", "", "",
 		"", "", "", "", &ReadSeekerCloser{body},
 		"", nil, "")
@@ -655,9 +651,9 @@ func (b *ADLv2) append(key string, offset int64, size int64, body io.ReadSeeker,
 	return
 }
 
-func (b *ADLv2) flush(key string, offset int64, contentType string, leaseId string) (res autorest.Response, err error) {
+func (b *ADLv2) flush(key string, offset int64, contentType string, leaseID string) (res autorest.Response, err error) {
 	res, err = b.client.Update(context.TODO(), adl2.Flush, b.bucket,
-		key, &offset, PBool(false), PBool(true), PInt64(0), "", leaseId, "",
+		key, &offset, PBool(false), PBool(true), PInt64(0), "", leaseID, "",
 		contentType, "", "", "", "", "", "", "", "", "",
 		"", "", "", "", nil, "", nil, "")
 	if err != nil {
@@ -719,11 +715,12 @@ func (b *ADLv2) PutBlob(param *PutBlobInput) (*PutBlobOutput, error) {
 	}
 }
 
+// MultipartBlobBegin is to initialize blob upload.
 // adlv2 doesn't have atomic multipart upload, instead we will hold a
 // lease, replace the object, then release the lease
 func (b *ADLv2) MultipartBlobBegin(param *MultipartBlobBeginInput) (*MultipartBlobCommitInput, error) {
-	leaseId := uuid.New().String()
-	err := b.lease(adl2.Acquire, param.Key, leaseId, 60, "")
+	leaseID := uuid.New().String()
+	err := b.lease(adl2.Acquire, param.Key, leaseID, 60, "")
 	if err == fuse.ENOENT {
 		// the file didn't exist, we will create the file
 		// first and then acquire the lease
@@ -732,7 +729,7 @@ func (b *ADLv2) MultipartBlobBegin(param *MultipartBlobBeginInput) (*MultipartBl
 			return nil, err
 		}
 
-		err = b.lease(adl2.Acquire, param.Key, leaseId, 60,
+		err = b.lease(adl2.Acquire, param.Key, leaseID, 60,
 			create.Response.Header.Get("ETag"))
 		if err != nil {
 			return nil, err
@@ -744,7 +741,7 @@ func (b *ADLv2) MultipartBlobBegin(param *MultipartBlobBeginInput) (*MultipartBl
 
 		defer func() {
 			if err != nil {
-				err2 := b.lease(adl2.Release, param.Key, leaseId, 0, "")
+				err2 := b.lease(adl2.Release, param.Key, leaseID, 0, "")
 				if err2 != nil {
 					adl2Log.Errorf("Unable to release lease for %v: %v",
 						param.Key, err2)
@@ -752,7 +749,7 @@ func (b *ADLv2) MultipartBlobBegin(param *MultipartBlobBeginInput) (*MultipartBl
 			}
 		}()
 
-		_, err = b.create(param.Key, adl2.File, param.ContentType, param.Metadata, leaseId)
+		_, err = b.create(param.Key, adl2.File, param.ContentType, param.Metadata, leaseID)
 		if err != nil {
 			return nil, err
 		}
@@ -765,12 +762,13 @@ func (b *ADLv2) MultipartBlobBegin(param *MultipartBlobBeginInput) (*MultipartBl
 	}
 
 	go func() {
+	BLOB_BEGIN_FOR:
 		for {
 			select {
 			case <-commitData.RenewLeaseStop:
-				break
+				break BLOB_BEGIN_FOR
 			case <-time.After(30 * time.Second):
-				b.lease(adl2.Renew, param.Key, leaseId, 60, "")
+				b.lease(adl2.Renew, param.Key, leaseID, 60, "")
 			}
 		}
 	}()
@@ -778,19 +776,19 @@ func (b *ADLv2) MultipartBlobBegin(param *MultipartBlobBeginInput) (*MultipartBl
 	return &MultipartBlobCommitInput{
 		Key:         &param.Key,
 		Metadata:    param.Metadata,
-		UploadId:    &leaseId,
+		UploadID:    &leaseID,
 		backendData: commitData,
 	}, nil
 }
 
-func (b *ADLv2) lease(action adl2.PathLeaseAction, key string, leaseId string, durationSec int32,
+func (b *ADLv2) lease(action adl2.PathLeaseAction, key string, leaseID string, durationSec int32,
 	ifMatch string) error {
-	var proposeLeaseId string
-	var prevLeaseId string
+	var proposeLeaseID string
+	var prevLeaseID string
 	if action == adl2.Acquire {
-		proposeLeaseId = leaseId
+		proposeLeaseID = leaseID
 	} else {
-		prevLeaseId = leaseId
+		prevLeaseID = leaseID
 	}
 
 	var duration *int32
@@ -799,7 +797,7 @@ func (b *ADLv2) lease(action adl2.PathLeaseAction, key string, leaseId string, d
 	}
 
 	res, err := b.client.Lease(context.TODO(), action, b.bucket, key,
-		duration, nil, prevLeaseId, proposeLeaseId, ifMatch, "", "", "", "", nil, "")
+		duration, nil, prevLeaseID, proposeLeaseID, ifMatch, "", "", "", "", nil, "")
 	if err != nil {
 		err = mapADLv2Error(res.Response, err, false)
 	}
@@ -814,20 +812,20 @@ func (b *ADLv2) MultipartBlobAdd(param *MultipartBlobAddInput) (*MultipartBlobAd
 	}
 
 	res, err := b.append(*param.Commit.Key, int64(param.Offset), int64(param.Size),
-		param.Body, *param.Commit.UploadId)
+		param.Body, *param.Commit.UploadID)
 	if err != nil {
 		return nil, err
 	}
 	atomic.AddUint64(&commitData.Size, param.Size)
 
 	return &MultipartBlobAddOutput{
-		res.Response.Header.Get(ADL2_REQUEST_ID),
+		res.Response.Header.Get(adl2RequestID),
 	}, nil
 }
 
 func (b *ADLv2) MultipartBlobAbort(param *MultipartBlobCommitInput) (*MultipartBlobAbortOutput, error) {
-	if param.UploadId != nil {
-		err := b.lease(adl2.Release, *param.Key, *param.UploadId, 0, "")
+	if param.UploadID != nil {
+		err := b.lease(adl2.Release, *param.Key, *param.UploadID, 0, "")
 		if err != nil {
 			return nil, err
 		}
@@ -844,19 +842,19 @@ func (b *ADLv2) MultipartBlobCommit(param *MultipartBlobCommitInput) (*Multipart
 
 	defer func() {
 		commitData.RenewLeaseStop <- true
-		leaseId := *param.UploadId
+		leaseID := *param.UploadID
 		// if the commit failed, we don't need to release the
 		// lease during abort
-		param.UploadId = nil
+		param.UploadID = nil
 
-		err2 := b.lease(adl2.Release, *param.Key, leaseId, 0, "")
+		err2 := b.lease(adl2.Release, *param.Key, leaseID, 0, "")
 		if err2 != nil {
 			adl2Log.Errorf("Unable to release lease for %v: %v",
 				*param.Key, err2)
 		}
 	}()
 
-	flush, err := b.flush(*param.Key, int64(commitData.Size), commitData.ContentType, *param.UploadId)
+	flush, err := b.flush(*param.Key, int64(commitData.Size), commitData.ContentType, *param.UploadID)
 	if err != nil {
 		return nil, err
 	}
@@ -864,7 +862,7 @@ func (b *ADLv2) MultipartBlobCommit(param *MultipartBlobCommitInput) (*Multipart
 	return &MultipartBlobCommitOutput{
 		LastModified: parseADLv2Time(flush.Response.Header.Get("Last-Modified")),
 		ETag:         getHeader(flush.Response, "ETag"),
-		RequestId:    flush.Response.Header.Get(ADL2_REQUEST_ID),
+		RequestID:    flush.Response.Header.Get(adl2RequestID),
 	}, nil
 }
 

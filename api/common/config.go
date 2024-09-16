@@ -37,8 +37,8 @@ type FlagStorage struct {
 	Cache    []string
 	DirMode  os.FileMode
 	FileMode os.FileMode
-	Uid      uint32
-	Gid      uint32
+	UID      uint32
+	GID      uint32
 
 	// Common Backend Config
 	UseContentType bool

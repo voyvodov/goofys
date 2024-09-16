@@ -144,7 +144,7 @@ func Mount(
 		catfs.Stderr = catfsLog.Writer()
 		err = catfs.Start()
 		if err != nil {
-			err = fmt.Errorf("Failed to start catfs: %v", err)
+			err = fmt.Errorf("failed to start catfs: %v", err)
 
 			// sleep a bit otherwise can't unmount right away
 			time.Sleep(time.Second)

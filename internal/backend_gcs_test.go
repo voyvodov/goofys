@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
+
 	"os"
 	"path"
 	"sort"
@@ -212,7 +212,7 @@ func (s *GCSBackendTest) TestGCSBackend_Init_Unauthenticated(c *C) {
 	}()
 	os.Setenv("GOOGLE_APPLICATION_CREDENTIALS", "")
 
-	credentials, err := google.FindDefaultCredentials(context.Background())
+	credentials, _ := google.FindDefaultCredentials(context.Background())
 	if credentials != nil {
 		c.Skip("Skipping this test because credentials still exist in the environment.")
 	}
@@ -290,7 +290,7 @@ func (s *GCSBackendTest) TestGCSBackend_GetFullBlob(c *C) {
 	c.Assert(err, IsNil)
 	defer fullBlob.Body.Close()
 
-	actualContent, err := ioutil.ReadAll(fullBlob.Body)
+	actualContent, err := io.ReadAll(fullBlob.Body)
 	c.Assert(err, IsNil)
 	c.Assert(string(actualContent), Equals, s.testSpec.existingObjContent)
 }
@@ -306,7 +306,7 @@ func (s *GCSBackendTest) TestGCSBackend_GetPartialBlob(c *C) {
 	c.Assert(err, IsNil)
 	defer partialBlob.Body.Close()
 
-	actualContent, err := ioutil.ReadAll(partialBlob.Body)
+	actualContent, err := io.ReadAll(partialBlob.Body)
 	c.Assert(err, IsNil)
 	c.Assert(string(actualContent), Equals, s.testSpec.existingObjContent[startOffset:startOffset+count])
 }
@@ -335,7 +335,7 @@ func (s *GCSBackendTest) TestGCSBackend_GetGzipEncodedBlob(c *C) {
 	c.Assert(err, IsNil)
 	defer gzipBlob.Body.Close()
 
-	actualContent, err := ioutil.ReadAll(gzipBlob.Body)
+	actualContent, _ := io.ReadAll(gzipBlob.Body)
 	c.Assert(string(actualContent), Equals, originalContent)
 }
 
@@ -494,7 +494,7 @@ func (s *GCSBackendTest) TestGCSBackend_CopyBlob_PreserveMetadata(c *C) {
 	destOut, err := s.gcsBackend.GetBlob(&GetBlobInput{Key: srcKey})
 	c.Assert(err, IsNil)
 	defer destOut.Body.Close()
-	destContent, err := ioutil.ReadAll(destOut.Body)
+	destContent, _ := io.ReadAll(destOut.Body)
 	c.Assert(string(destContent), Equals, s.testSpec.existingObjContent)
 }
 

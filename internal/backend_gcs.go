@@ -452,7 +452,7 @@ func mapGCSError(err error) error {
 			return syscall.EAGAIN
 		default:
 			// return syscall error if it's not nil
-			fuseErr := mapHttpError(e.Code)
+			fuseErr := mapHTTPError(e.Code)
 			if fuseErr != nil {
 				return fuseErr
 			}

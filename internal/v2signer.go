@@ -53,7 +53,7 @@ var subresources = []string{
 	"policy",
 	"requestPayment",
 	"torrent",
-	"uploadId",
+	"uploadID",
 	"uploads",
 	"versionId",
 	"versioning",

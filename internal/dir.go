@@ -108,12 +108,12 @@ func NewDirHandle(inode *Inode) (dh *DirHandle) {
 	return
 }
 
-func (inode *Inode) OpenDir() (dh *DirHandle) {
-	inode.logFuse("OpenDir")
+func (in *Inode) OpenDir() (dh *DirHandle) {
+	in.logFuse("OpenDir")
 	var isS3 bool
 
-	parent := inode.Parent
-	cloud, _ := inode.cloud()
+	inodeP := in.Parent
+	cloud, _ := in.cloud()
 
 	// in test we sometimes set cloud to nil to ensure we are not
 	// talking to the cloud
@@ -121,30 +121,30 @@ func (inode *Inode) OpenDir() (dh *DirHandle) {
 		_, isS3 = cloud.Delegate().(*S3Backend)
 	}
 
-	dir := inode.dir
+	dir := in.dir
 	if dir == nil {
-		panic(fmt.Sprintf("%v is not a directory", inode.FullName()))
+		panic(fmt.Sprintf("%v is not a directory", in.FullName()))
 	}
 
-	if isS3 && parent != nil && inode.fs.flags.TypeCacheTTL != 0 {
-		parent.mu.Lock()
-		defer parent.mu.Unlock()
+	if isS3 && inodeP != nil && in.fs.flags.TypeCacheTTL != 0 {
+		inodeP.mu.Lock()
+		defer inodeP.mu.Unlock()
 
-		numChildren := len(parent.dir.Children)
+		numChildren := len(inodeP.dir.Children)
 		dirIdx := -1
 		seqMode := false
 		firstDir := false
 
-		if parent.dir.lastOpenDir == nil {
+		if inodeP.dir.lastOpenDir == nil {
 			// check if we are opening the first child
 			// (after . and ..)  cap the search to 1000
 			// peers to bound the time. If the next dir is
 			// more than 1000 away, slurping isn't going
 			// to be helpful anyway
 			for i := 2; i < MinInt(numChildren, 1000); i++ {
-				c := parent.dir.Children[i]
+				c := inodeP.dir.Children[i]
 				if c.isDir() {
-					if *c.Name == *inode.Name {
+					if *c.Name == *in.Name {
 						dirIdx = i
 						seqMode = true
 						firstDir = true
@@ -154,10 +154,10 @@ func (inode *Inode) OpenDir() (dh *DirHandle) {
 			}
 		} else {
 			// check if we are reading the next one as expected
-			for i := parent.dir.lastOpenDirIdx + 1; i < MinInt(numChildren, 1000); i++ {
-				c := parent.dir.Children[i]
+			for i := inodeP.dir.lastOpenDirIdx + 1; i < MinInt(numChildren, 1000); i++ {
+				c := inodeP.dir.Children[i]
 				if c.isDir() {
-					if *c.Name == *inode.Name {
+					if *c.Name == *in.Name {
 						dirIdx = i
 						seqMode = true
 					}
@@ -167,14 +167,14 @@ func (inode *Inode) OpenDir() (dh *DirHandle) {
 		}
 
 		if seqMode {
-			if parent.dir.seqOpenDirScore < 255 {
-				parent.dir.seqOpenDirScore++
+			if inodeP.dir.seqOpenDirScore < 255 {
+				inodeP.dir.seqOpenDirScore++
 			}
-			if parent.dir.seqOpenDirScore == 2 {
-				fuseLog.Debugf("%v in readdir mode", *parent.FullName())
+			if inodeP.dir.seqOpenDirScore == 2 {
+				fuseLog.Debugf("%v in readdir mode", *inodeP.FullName())
 			}
-			parent.dir.lastOpenDir = dir
-			parent.dir.lastOpenDirIdx = dirIdx
+			inodeP.dir.lastOpenDir = dir
+			inodeP.dir.lastOpenDirIdx = dirIdx
 			if firstDir {
 				// 1) if I open a/, root's score = 1
 				// (a is the first dir), so make a/'s
@@ -182,24 +182,24 @@ func (inode *Inode) OpenDir() (dh *DirHandle) {
 				// propagate down the score for
 				// depth-first search case
 				wasSeqMode := dir.seqOpenDirScore >= 2
-				dir.seqOpenDirScore = parent.dir.seqOpenDirScore
+				dir.seqOpenDirScore = inodeP.dir.seqOpenDirScore
 				if !wasSeqMode && dir.seqOpenDirScore >= 2 {
-					fuseLog.Debugf("%v in readdir mode", *inode.FullName())
+					fuseLog.Debugf("%v in readdir mode", *in.FullName())
 				}
 			}
 		} else {
-			parent.dir.seqOpenDirScore = 0
+			inodeP.dir.seqOpenDirScore = 0
 			if dirIdx == -1 {
-				dirIdx = parent.findChildIdxUnlocked(*inode.Name)
+				dirIdx = inodeP.findChildIdxUnlocked(*in.Name)
 			}
 			if dirIdx != -1 {
-				parent.dir.lastOpenDir = dir
-				parent.dir.lastOpenDirIdx = dirIdx
+				inodeP.dir.lastOpenDir = dir
+				inodeP.dir.lastOpenDirIdx = dirIdx
 			}
 		}
 	}
 
-	dh = NewDirHandle(inode)
+	dh = NewDirHandle(in)
 	return
 }
 
@@ -212,9 +212,9 @@ func (dh *DirHandle) listObjectsSlurp(prefix string) (resp *ListBlobsOutput, err
 
 	if dh.inode.Parent != nil {
 		inode = dh.inode.Parent
-		var parentCloud StorageBackend
-		parentCloud, reqPrefix = inode.cloud()
-		if parentCloud != cloud {
+		var inCloud StorageBackend
+		inCloud, reqPrefix = inode.cloud()
+		if inCloud != cloud {
 			err = fmt.Errorf("cannot slurp across cloud provider")
 			return
 		}
@@ -310,11 +310,11 @@ func (dh *DirHandle) listObjects(prefix string) (resp *ListBlobsOutput, err erro
 
 	// try to list without delimiter to see if we can slurp up
 	// multiple directories
-	parent := dh.inode.Parent
+	in := dh.inode.Parent
 
 	if dh.Marker == nil &&
 		fs.flags.TypeCacheTTL != 0 &&
-		(parent != nil && parent.dir.seqOpenDirScore >= 2) {
+		(in != nil && in.dir.seqOpenDirScore >= 2) {
 		go func() {
 			resp, err := dh.listObjectsSlurp(prefix)
 			if err != nil {
@@ -355,7 +355,7 @@ func (dh *DirHandle) listObjects(prefix string) (resp *ListBlobsOutput, err erro
 	select {
 	case resp := <-slurpChan:
 		return &resp, nil
-	case err = <-errSlurpChan:
+	case <-errSlurpChan:
 	}
 
 	if fs.flags.Cheap {
@@ -420,7 +420,7 @@ func listBlobsSafe(cloud StorageBackend, param *ListBlobsInput) (*ListBlobsOutpu
 			IsTruncated:           nextRes.IsTruncated,
 			// We no longer have a single request. This is composite request. Concatenate
 			// new request id to exiting.
-			RequestId: res.RequestId + ", " + nextRes.RequestId,
+			RequestID: res.RequestID + ", " + nextRes.RequestID,
 		}
 	}
 	return res, nil
@@ -468,12 +468,13 @@ func listBlobsWrapper(cloud StorageBackend, param *ListBlobsInput) (*ListBlobsOu
 			Items:                 append(ret.Items, internalResp.Items...),
 			NextContinuationToken: internalResp.NextContinuationToken,
 			IsTruncated:           internalResp.IsTruncated,
-			RequestId:             internalResp.RequestId,
+			RequestID:             internalResp.RequestID,
 		}
 	}
 	return ret, nil
 }
 
+// ReadDir is used to list directory
 // LOCKS_REQUIRED(dh.mu)
 // LOCKS_EXCLUDED(dh.inode.mu)
 // LOCKS_EXCLUDED(dh.inode.fs)
@@ -483,8 +484,8 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 		return
 	}
 
-	parent := dh.inode
-	fs := parent.fs
+	in := dh.inode
+	fs := in.fs
 
 	// the dir expired, so we need to fetch from the cloud. there
 	// maybe static directories that we want to keep, so cloud
@@ -520,7 +521,7 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 
 		s3Log.Debug(resp)
 		dh.mu.Lock()
-		parent.mu.Lock()
+		in.mu.Lock()
 		fs.mu.Lock()
 
 		// this is only returned for non-slurped responses
@@ -533,7 +534,7 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 				continue
 			}
 
-			if inode := parent.findChildUnlocked(dirName); inode != nil {
+			if inode := in.findChildUnlocked(dirName); inode != nil {
 				now := time.Now()
 				// don't want to update time if this
 				// inode is setup to never expire
@@ -541,9 +542,9 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 					inode.AttrTime = now
 				}
 			} else {
-				inode := NewInode(fs, parent, &dirName)
+				inode := NewInode(fs, in, &dirName)
 				inode.ToDir()
-				fs.insertInode(parent, inode)
+				fs.insertInode(in, inode)
 				// these are fake dir entries, we will
 				// realize the refcnt when lookup is
 				// done
@@ -568,14 +569,14 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 					continue
 				}
 
-				inode := parent.findChildUnlocked(baseName)
+				inode := in.findChildUnlocked(baseName)
 				if inode == nil {
-					inode = NewInode(fs, parent, &baseName)
+					inode = NewInode(fs, in, &baseName)
 					// these are fake dir entries,
 					// we will realize the refcnt
 					// when lookup is done
 					inode.refcnt = 0
-					fs.insertInode(parent, inode)
+					fs.insertInode(in, inode)
 				}
 				inode.SetFromBlobItem(&obj)
 			} else {
@@ -590,7 +591,7 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 			}
 		}
 
-		parent.mu.Unlock()
+		in.mu.Unlock()
 		fs.mu.Unlock()
 
 		if resp.IsTruncated {
@@ -602,24 +603,24 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 		}
 	}
 
-	parent.mu.Lock()
-	defer parent.mu.Unlock()
+	in.mu.Lock()
+	defer in.mu.Unlock()
 
 	// Find the first non-stale child inode with offset >=
 	// `offset`. A stale inode is one that existed before the
 	// first ListBlobs for this dir handle, but is not being
 	// written to (ie: not a new file)
 	var child *Inode
-	for int(offset) < len(parent.dir.Children) {
+	for int(offset) < len(in.dir.Children) {
 		// Note on locking: See comments at Inode::AttrTime, Inode::Parent.
-		childTmp := parent.dir.Children[offset]
+		childTmp := in.dir.Children[offset]
 		if atomic.LoadInt32(&childTmp.fileHandles) == 0 &&
 			childTmp.AttrTime.Before(dh.refreshStartTime) {
 			// childTmp.AttrTime < dh.refreshStartTime => the child entry was not
 			// updated from cloud by this dir Handle.
 			// So this is a stale entry that should be removed.
 			childTmp.Parent = nil
-			parent.removeChildUnlocked(childTmp)
+			in.removeChildUnlocked(childTmp)
 		} else {
 			// Found a non-stale child inode.
 			child = childTmp
@@ -629,14 +630,14 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 
 	if child == nil {
 		// we've reached the end
-		parent.dir.DirTime = time.Now()
-		parent.Attributes.Mtime = parent.findChildMaxTime()
+		in.dir.DirTime = time.Now()
+		in.Attributes.Mtime = in.findChildMaxTime()
 		return nil, nil
 	}
 
 	en = &DirHandleEntry{
 		Name:   *child.Name,
-		Inode:  child.Id,
+		Inode:  child.ID,
 		Offset: fuseops.DirOffset(offset) + 1,
 	}
 	if child.isDir() {
@@ -657,13 +658,13 @@ func (dh *DirHandle) CloseDir() error {
 
 // prefix and newPrefix should include the trailing /
 // return all the renamed objects
-func (dir *Inode) renameChildren(cloud StorageBackend, prefix string,
+func (in *Inode) renameChildren(cloud StorageBackend, prefix string,
 	newParent *Inode, newPrefix string) (err error) {
 
 	var copied []string
 	var res *ListBlobsOutput
 
-	for true {
+	for {
 		param := ListBlobsInput{
 			Prefix: &prefix,
 		}
@@ -729,19 +730,19 @@ func (dir *Inode) renameChildren(cloud StorageBackend, prefix string,
 
 // Recursively resets the DirTime for child directories.
 // ACQUIRES_LOCK(inode.mu)
-func (inode *Inode) resetDirTimeRec() {
-	inode.mu.Lock()
-	if inode.dir == nil {
-		inode.mu.Unlock()
+func (in *Inode) resetDirTimeRec() {
+	in.mu.Lock()
+	if in.dir == nil {
+		in.mu.Unlock()
 		return
 	}
-	inode.dir.DirTime = time.Time{}
+	in.dir.DirTime = time.Time{}
 	// Make a copy of the child nodes before giving up the lock.
 	// This protects us from any addition/removal of child nodes
 	// under this node.
-	children := make([]*Inode, len(inode.dir.Children))
-	copy(children, inode.dir.Children)
-	inode.mu.Unlock()
+	children := make([]*Inode, len(in.dir.Children))
+	copy(children, in.dir.Children)
+	in.mu.Unlock()
 	for _, child := range children {
 		child.resetDirTimeRec()
 	}
@@ -750,35 +751,35 @@ func (inode *Inode) resetDirTimeRec() {
 // ResetForUnmount resets the Inode as part of unmounting a storage backend
 // mounted at the given inode.
 // ACQUIRES_LOCK(inode.mu)
-func (inode *Inode) ResetForUnmount() {
-	if inode.dir == nil {
+func (in *Inode) ResetForUnmount() {
+	if in.dir == nil {
 		panic(fmt.Sprintf("ResetForUnmount called on a non-directory. name:%v",
-			inode.Name))
+			in.Name))
 	}
 
-	inode.mu.Lock()
+	in.mu.Lock()
 	// First reset the cloud info for this directory. After that, any read and
 	// write operations under this directory will not know about this cloud.
-	inode.dir.cloud = nil
-	inode.dir.mountPrefix = ""
+	in.dir.cloud = nil
+	in.dir.mountPrefix = ""
 
 	// Clear metadata.
 	// Set the metadata values to nil instead of deleting them so that
 	// we know to fetch them again next time instead of thinking there's
 	// no metadata
-	inode.userMetadata = nil
-	inode.s3Metadata = nil
-	inode.Attributes = InodeAttributes{}
-	inode.Invalid, inode.ImplicitDir = false, false
-	inode.mu.Unlock()
+	in.userMetadata = nil
+	in.s3Metadata = nil
+	in.Attributes = InodeAttributes{}
+	in.Invalid, in.ImplicitDir = false, false
+	in.mu.Unlock()
 	// Reset DirTime for recursively for this node and all its child nodes.
 	// Note: resetDirTimeRec should be called without holding the lock.
-	inode.resetDirTimeRec()
+	in.resetDirTimeRec()
 
 }
 
-func (parent *Inode) findPath(path string) (inode *Inode) {
-	dir := parent
+func (in *Inode) findPath(path string) (inode *Inode) {
+	dir := in
 
 	for dir != nil {
 		if !dir.isDir() {
@@ -798,110 +799,109 @@ func (parent *Inode) findPath(path string) (inode *Inode) {
 	return nil
 }
 
-func (parent *Inode) findChild(name string) (inode *Inode) {
-	parent.mu.Lock()
-	defer parent.mu.Unlock()
+func (in *Inode) findChild(name string) (inode *Inode) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
 
-	inode = parent.findChildUnlocked(name)
+	inode = in.findChildUnlocked(name)
 	return
 }
 
-func (parent *Inode) findInodeFunc(name string) func(i int) bool {
+func (in *Inode) findInodeFunc(name string) func(i int) bool {
 	return func(i int) bool {
-		return (*parent.dir.Children[i].Name) >= name
+		return (*in.dir.Children[i].Name) >= name
 	}
 }
 
-func (parent *Inode) findChildUnlocked(name string) (inode *Inode) {
-	l := len(parent.dir.Children)
+func (in *Inode) findChildUnlocked(name string) (inode *Inode) {
+	l := len(in.dir.Children)
 	if l == 0 {
 		return
 	}
-	i := sort.Search(l, parent.findInodeFunc(name))
+	i := sort.Search(l, in.findInodeFunc(name))
 	if i < l {
 		// found
-		if *parent.dir.Children[i].Name == name {
-			inode = parent.dir.Children[i]
+		if *in.dir.Children[i].Name == name {
+			inode = in.dir.Children[i]
 		}
 	}
 	return
 }
 
-func (parent *Inode) findChildIdxUnlocked(name string) int {
-	l := len(parent.dir.Children)
+func (in *Inode) findChildIdxUnlocked(name string) int {
+	l := len(in.dir.Children)
 	if l == 0 {
 		return -1
 	}
-	i := sort.Search(l, parent.findInodeFunc(name))
-	if i < l && *parent.dir.Children[i].Name == name {
+	i := sort.Search(l, in.findInodeFunc(name))
+	if i < l && *in.dir.Children[i].Name == name {
 		return i
 	}
 	return -1
 }
 
-func (parent *Inode) removeChildUnlocked(inode *Inode) {
-	l := len(parent.dir.Children)
+func (in *Inode) removeChildUnlocked(inode *Inode) {
+	l := len(in.dir.Children)
 	if l == 0 {
 		return
 	}
-	i := sort.Search(l, parent.findInodeFunc(*inode.Name))
-	if i >= l || *parent.dir.Children[i].Name != *inode.Name {
+	i := sort.Search(l, in.findInodeFunc(*inode.Name))
+	if i >= l || *in.dir.Children[i].Name != *inode.Name {
 		panic(fmt.Sprintf("%v.removeName(%v) but child not found: %v",
-			*parent.FullName(), *inode.Name, i))
+			*in.FullName(), *inode.Name, i))
 	}
 
-	copy(parent.dir.Children[i:], parent.dir.Children[i+1:])
-	parent.dir.Children[l-1] = nil
-	parent.dir.Children = parent.dir.Children[:l-1]
+	copy(in.dir.Children[i:], in.dir.Children[i+1:])
+	in.dir.Children[l-1] = nil
+	in.dir.Children = in.dir.Children[:l-1]
 
-	if cap(parent.dir.Children)-len(parent.dir.Children) > 20 {
-		tmp := make([]*Inode, len(parent.dir.Children))
-		copy(tmp, parent.dir.Children)
-		parent.dir.Children = tmp
+	if cap(in.dir.Children)-len(in.dir.Children) > 20 {
+		tmp := make([]*Inode, len(in.dir.Children))
+		copy(tmp, in.dir.Children)
+		in.dir.Children = tmp
 	}
 }
 
-func (parent *Inode) removeChild(inode *Inode) {
-	parent.mu.Lock()
-	defer parent.mu.Unlock()
+func (in *Inode) removeChild(inode *Inode) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
 
-	parent.removeChildUnlocked(inode)
-	return
+	in.removeChildUnlocked(inode)
 }
 
-func (parent *Inode) insertChild(inode *Inode) {
-	parent.mu.Lock()
-	defer parent.mu.Unlock()
+func (in *Inode) insertChild(inode *Inode) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
 
-	parent.insertChildUnlocked(inode)
+	in.insertChildUnlocked(inode)
 }
 
-func (parent *Inode) insertChildUnlocked(inode *Inode) {
-	l := len(parent.dir.Children)
+func (in *Inode) insertChildUnlocked(inode *Inode) {
+	l := len(in.dir.Children)
 	if l == 0 {
-		parent.dir.Children = []*Inode{inode}
+		in.dir.Children = []*Inode{inode}
 		return
 	}
 
-	i := sort.Search(l, parent.findInodeFunc(*inode.Name))
+	i := sort.Search(l, in.findInodeFunc(*inode.Name))
 	if i == l {
 		// not found = new value is the biggest
-		parent.dir.Children = append(parent.dir.Children, inode)
+		in.dir.Children = append(in.dir.Children, inode)
 	} else {
-		if *parent.dir.Children[i].Name == *inode.Name {
-			panic(fmt.Sprintf("double insert of %v", parent.getChildName(*inode.Name)))
+		if *in.dir.Children[i].Name == *inode.Name {
+			panic(fmt.Sprintf("double insert of %v", in.getChildName(*inode.Name)))
 		}
 
-		parent.dir.Children = append(parent.dir.Children, nil)
-		copy(parent.dir.Children[i+1:], parent.dir.Children[i:])
-		parent.dir.Children[i] = inode
+		in.dir.Children = append(in.dir.Children, nil)
+		copy(in.dir.Children[i+1:], in.dir.Children[i:])
+		in.dir.Children[i] = inode
 	}
 }
 
-func (parent *Inode) LookUp(name string) (inode *Inode, err error) {
-	parent.logFuse("Inode.LookUp", name)
+func (in *Inode) LookUp(name string) (inode *Inode, err error) {
+	in.logFuse("Inode.LookUp", name)
 
-	inode, err = parent.LookUpInodeMaybeDir(name, parent.getChildName(name))
+	inode, err = in.LookUpInodeMaybeDir(name, in.getChildName(name))
 	if err != nil {
 		return nil, err
 	}
@@ -909,18 +909,18 @@ func (parent *Inode) LookUp(name string) (inode *Inode, err error) {
 	return
 }
 
-func (parent *Inode) getChildName(name string) string {
-	if parent.Id == fuseops.RootInodeID {
+func (in *Inode) getChildName(name string) string {
+	if in.ID == fuseops.RootInodeID {
 		return name
 	} else {
-		return fmt.Sprintf("%v/%v", *parent.FullName(), name)
+		return fmt.Sprintf("%v/%v", *in.FullName(), name)
 	}
 }
 
-func (parent *Inode) Unlink(name string) (err error) {
-	parent.logFuse("Unlink", name)
+func (in *Inode) Unlink(name string) (err error) {
+	in.logFuse("Unlink", name)
 
-	cloud, key := parent.cloud()
+	cloud, key := in.cloud()
 	key = appendChildName(key, name)
 
 	_, err = cloud.DeleteBlob(&DeleteBlobInput{
@@ -934,30 +934,30 @@ func (parent *Inode) Unlink(name string) (err error) {
 		return
 	}
 
-	parent.mu.Lock()
-	defer parent.mu.Unlock()
+	in.mu.Lock()
+	defer in.mu.Unlock()
 
-	inode := parent.findChildUnlocked(name)
+	inode := in.findChildUnlocked(name)
 	if inode != nil {
-		parent.removeChildUnlocked(inode)
+		in.removeChildUnlocked(inode)
 		inode.Parent = nil
 	}
 
 	return
 }
 
-func (parent *Inode) Create(
+func (in *Inode) Create(
 	name string, metadata fuseops.OpContext) (inode *Inode, fh *FileHandle) {
 
-	parent.logFuse("Create", name)
+	in.logFuse("Create", name)
 
-	fs := parent.fs
+	fs := in.fs
 
-	parent.mu.Lock()
-	defer parent.mu.Unlock()
+	in.mu.Lock()
+	defer in.mu.Unlock()
 
 	now := time.Now()
-	inode = NewInode(fs, parent, &name)
+	inode = NewInode(fs, in, &name)
 	inode.Attributes = InodeAttributes{
 		Size:  0,
 		Mtime: now,
@@ -968,19 +968,19 @@ func (parent *Inode) Create(
 	fh.dirty = true
 	inode.fileHandles = 1
 
-	parent.touch()
+	in.touch()
 
 	return
 }
 
-func (parent *Inode) MkDir(
+func (in *Inode) MkDir(
 	name string) (inode *Inode, err error) {
 
-	parent.logFuse("MkDir", name)
+	in.logFuse("MkDir", name)
 
-	fs := parent.fs
+	fs := in.fs
 
-	cloud, key := parent.cloud()
+	cloud, key := in.cloud()
 	key = appendChildName(key, name)
 	if !cloud.Capabilities().DirBlob {
 		key += "/"
@@ -996,28 +996,28 @@ func (parent *Inode) MkDir(
 		return
 	}
 
-	parent.mu.Lock()
-	defer parent.mu.Unlock()
+	in.mu.Lock()
+	defer in.mu.Unlock()
 
-	inode = NewInode(fs, parent, &name)
+	inode = NewInode(fs, in, &name)
 	inode.ToDir()
 	inode.touch()
-	if parent.Attributes.Mtime.Before(inode.Attributes.Mtime) {
-		parent.Attributes.Mtime = inode.Attributes.Mtime
+	if in.Attributes.Mtime.Before(inode.Attributes.Mtime) {
+		in.Attributes.Mtime = inode.Attributes.Mtime
 	}
 
 	return
 }
 
-func appendChildName(parent, child string) string {
-	if len(parent) != 0 {
-		parent += "/"
+func appendChildName(in, child string) string {
+	if len(in) != 0 {
+		in += "/"
 	}
-	return parent + child
+	return in + child
 }
 
-func (parent *Inode) isEmptyDir(fs *Goofys, name string) (isDir bool, err error) {
-	cloud, key := parent.cloud()
+func (in *Inode) isEmptyDir(fs *Goofys, name string) (isDir bool, err error) {
+	cloud, key := in.cloud()
 	key = appendChildName(key, name) + "/"
 
 	resp, err := listBlobsWrapper(cloud, &ListBlobsInput{
@@ -1046,17 +1046,17 @@ func (parent *Inode) isEmptyDir(fs *Goofys, name string) (isDir bool, err error)
 	return
 }
 
-func (parent *Inode) RmDir(name string) (err error) {
-	parent.logFuse("Rmdir", name)
+func (in *Inode) RmDir(name string) (err error) {
+	in.logFuse("Rmdir", name)
 
-	isDir, err := parent.isEmptyDir(parent.fs, name)
+	isDir, err := in.isEmptyDir(in.fs, name)
 	if err != nil {
 		return
 	}
 	// if this was an implicit dir, isEmptyDir would have returned
 	// isDir = false
 	if isDir {
-		cloud, key := parent.cloud()
+		cloud, key := in.cloud()
 		key = appendChildName(key, name) + "/"
 
 		params := DeleteBlobInput{
@@ -1070,18 +1070,19 @@ func (parent *Inode) RmDir(name string) (err error) {
 	}
 
 	// we know this entry is gone
-	parent.mu.Lock()
-	defer parent.mu.Unlock()
+	in.mu.Lock()
+	defer in.mu.Unlock()
 
-	inode := parent.findChildUnlocked(name)
+	inode := in.findChildUnlocked(name)
 	if inode != nil {
-		parent.removeChildUnlocked(inode)
+		in.removeChildUnlocked(inode)
 		inode.Parent = nil
 	}
 
 	return
 }
 
+// Rename can be used to rename files/folders
 // semantic of rename:
 // rename("any", "not_exists") = ok
 // rename("file1", "file2") = ok
@@ -1090,10 +1091,10 @@ func (parent *Inode) RmDir(name string) (err error) {
 // rename("nonempty_dir1", "nonempty_dir2") = ENOTEMPTY
 // rename("file", "dir") = EISDIR
 // rename("dir", "file") = ENOTDIR
-func (parent *Inode) Rename(from string, newParent *Inode, to string) (err error) {
-	parent.logFuse("Rename", from, newParent.getChildName(to))
+func (in *Inode) Rename(from string, newParent *Inode, to string) (err error) {
+	in.logFuse("Rename", from, newParent.getChildName(to))
 
-	fromCloud, fromPath := parent.cloud()
+	fromCloud, fromPath := in.cloud()
 	toCloud, toPath := newParent.cloud()
 	if fromCloud != toCloud {
 		// cannot rename across cloud backend
@@ -1102,14 +1103,14 @@ func (parent *Inode) Rename(from string, newParent *Inode, to string) (err error
 	}
 
 	fromFullName := appendChildName(fromPath, from)
-	fs := parent.fs
+	fs := in.fs
 
 	var size *uint64
 	var fromIsDir bool
 	var toIsDir bool
 	var renameChildren bool
 
-	fromIsDir, err = parent.isEmptyDir(fs, from)
+	fromIsDir, err = in.isEmptyDir(fs, from)
 	if err != nil {
 		if err == fuse.ENOTEMPTY {
 			renameChildren = true
@@ -1120,7 +1121,7 @@ func (parent *Inode) Rename(from string, newParent *Inode, to string) (err error
 
 	toFullName := appendChildName(toPath, to)
 
-	toIsDir, err = parent.isEmptyDir(fs, to)
+	toIsDir, err = in.isEmptyDir(fs, to)
 	if err != nil {
 		return
 	}
@@ -1148,19 +1149,19 @@ func (parent *Inode) Rename(from string, newParent *Inode, to string) (err error
 	}
 
 	if renameChildren && !fromCloud.Capabilities().DirBlob {
-		err = parent.renameChildren(fromCloud, fromFullName,
+		err = in.renameChildren(fromCloud, fromFullName,
 			newParent, toFullName)
 		if err != nil {
 			return
 		}
 	} else {
-		err = parent.renameObject(fs, size, fromFullName, toFullName)
+		err = in.renameObject(fs, size, fromFullName, toFullName)
 	}
 	return
 }
 
-func (parent *Inode) renameObject(fs *Goofys, size *uint64, fromFullName string, toFullName string) (err error) {
-	cloud, _ := parent.cloud()
+func (in *Inode) renameObject(fs *Goofys, size *uint64, fromFullName string, toFullName string) (err error) {
+	cloud, _ := in.cloud()
 
 	_, err = cloud.RenameBlob(&RenameBlobInput{
 		Source:      fromFullName,
@@ -1192,8 +1193,8 @@ func (parent *Inode) renameObject(fs *Goofys, size *uint64, fromFullName string,
 
 // if I had seen a/ and a/b, and now I get a/c, that means a/b is
 // done, but not a/
-func (parent *Inode) isParentOf(inode *Inode) bool {
-	return inode.Parent != nil && (parent == inode.Parent || parent.isParentOf(inode.Parent))
+func (in *Inode) isParentOf(inode *Inode) bool {
+	return inode.Parent != nil && (in == inode.Parent || in.isParentOf(inode.Parent))
 }
 
 func sealPastDirs(dirs map[*Inode]bool, d *Inode) {
@@ -1207,17 +1208,17 @@ func sealPastDirs(dirs map[*Inode]bool, d *Inode) {
 }
 
 // LOCKS_REQUIRED(fs.mu)
-// LOCKS_REQUIRED(parent.mu)
-// LOCKS_REQUIRED(parent.fs.mu)
-func (parent *Inode) insertSubTree(path string, obj *BlobItemOutput, dirs map[*Inode]bool) {
-	fs := parent.fs
+// LOCKS_REQUIRED(in.mu)
+// LOCKS_REQUIRED(in.fs.mu)
+func (in *Inode) insertSubTree(path string, obj *BlobItemOutput, dirs map[*Inode]bool) {
+	fs := in.fs
 	slash := strings.Index(path, "/")
 	if slash == -1 {
-		inode := parent.findChildUnlocked(path)
+		inode := in.findChildUnlocked(path)
 		if inode == nil {
-			inode = NewInode(fs, parent, &path)
+			inode = NewInode(fs, in, &path)
 			inode.refcnt = 0
-			fs.insertInode(parent, inode)
+			fs.insertInode(in, inode)
 			inode.SetFromBlobItem(obj)
 		} else {
 			// our locking order is most specific lock
@@ -1227,43 +1228,43 @@ func (parent *Inode) insertSubTree(path string, obj *BlobItemOutput, dirs map[*I
 			// violation because no one else will take
 			// that lock anyway
 			fs.mu.Unlock()
-			parent.mu.Unlock()
+			in.mu.Unlock()
 			inode.SetFromBlobItem(obj)
-			parent.mu.Lock()
+			in.mu.Lock()
 			fs.mu.Lock()
 		}
-		sealPastDirs(dirs, parent)
+		sealPastDirs(dirs, in)
 	} else {
 		dir := path[:slash]
 		path = path[slash+1:]
 
 		if len(path) == 0 {
-			inode := parent.findChildUnlocked(dir)
+			inode := in.findChildUnlocked(dir)
 			if inode == nil {
-				inode = NewInode(fs, parent, &dir)
+				inode = NewInode(fs, in, &dir)
 				inode.ToDir()
 				inode.refcnt = 0
-				fs.insertInode(parent, inode)
+				fs.insertInode(in, inode)
 				inode.SetFromBlobItem(obj)
 			} else if !inode.isDir() {
 				inode.ToDir()
 				fs.addDotAndDotDot(inode)
 			} else {
 				fs.mu.Unlock()
-				parent.mu.Unlock()
+				in.mu.Unlock()
 				inode.SetFromBlobItem(obj)
-				parent.mu.Lock()
+				in.mu.Lock()
 				fs.mu.Lock()
 			}
 			sealPastDirs(dirs, inode)
 		} else {
 			// ensure that the potentially implicit dir is added
-			inode := parent.findChildUnlocked(dir)
+			inode := in.findChildUnlocked(dir)
 			if inode == nil {
-				inode = NewInode(fs, parent, &dir)
+				inode = NewInode(fs, in, &dir)
 				inode.ToDir()
 				inode.refcnt = 0
-				fs.insertInode(parent, inode)
+				fs.insertInode(in, inode)
 			} else if !inode.isDir() {
 				inode.ToDir()
 				fs.addDotAndDotDot(inode)
@@ -1278,22 +1279,22 @@ func (parent *Inode) insertSubTree(path string, obj *BlobItemOutput, dirs map[*I
 			dirs[inode] = false
 
 			fs.mu.Unlock()
-			parent.mu.Unlock()
+			in.mu.Unlock()
 			inode.mu.Lock()
 			fs.mu.Lock()
 			inode.insertSubTree(path, obj, dirs)
 			inode.mu.Unlock()
 			fs.mu.Unlock()
-			parent.mu.Lock()
+			in.mu.Lock()
 			fs.mu.Lock()
 		}
 	}
 }
 
-func (parent *Inode) findChildMaxTime() time.Time {
-	maxTime := parent.Attributes.Mtime
+func (in *Inode) findChildMaxTime() time.Time {
+	maxTime := in.Attributes.Mtime
 
-	for i, c := range parent.dir.Children {
+	for i, c := range in.dir.Children {
 		if i < 2 {
 			// skip . and ..
 			continue
@@ -1306,24 +1307,24 @@ func (parent *Inode) findChildMaxTime() time.Time {
 	return maxTime
 }
 
-func (parent *Inode) readDirFromCache(offset fuseops.DirOffset) (en *DirHandleEntry, ok bool) {
-	parent.mu.Lock()
-	defer parent.mu.Unlock()
+func (in *Inode) readDirFromCache(offset fuseops.DirOffset) (en *DirHandleEntry, ok bool) {
+	in.mu.Lock()
+	defer in.mu.Unlock()
 
-	if parent.dir == nil {
-		panic(*parent.FullName())
+	if in.dir == nil {
+		panic(*in.FullName())
 	}
-	if !expired(parent.dir.DirTime, parent.fs.flags.TypeCacheTTL) {
+	if !expired(in.dir.DirTime, in.fs.flags.TypeCacheTTL) {
 		ok = true
 
-		if int(offset) >= len(parent.dir.Children) {
+		if int(offset) >= len(in.dir.Children) {
 			return
 		}
-		child := parent.dir.Children[offset]
+		child := in.dir.Children[offset]
 
 		en = &DirHandleEntry{
 			Name:   *child.Name,
-			Inode:  child.Id,
+			Inode:  child.ID,
 			Offset: offset + 1,
 		}
 		if child.isDir() {
@@ -1336,8 +1337,8 @@ func (parent *Inode) readDirFromCache(offset fuseops.DirOffset) (en *DirHandleEn
 	return
 }
 
-func (parent *Inode) LookUpInodeNotDir(name string, c chan HeadBlobOutput, errc chan error) {
-	cloud, key := parent.cloud()
+func (in *Inode) LookUpInodeNotDir(name string, c chan HeadBlobOutput, errc chan error) {
+	cloud, key := in.cloud()
 	key = appendChildName(key, name)
 	params := &HeadBlobInput{Key: key}
 	resp, err := cloud.HeadBlob(params)
@@ -1350,8 +1351,8 @@ func (parent *Inode) LookUpInodeNotDir(name string, c chan HeadBlobOutput, errc 
 	c <- *resp
 }
 
-func (parent *Inode) LookUpInodeDir(name string, c chan ListBlobsOutput, errc chan error) {
-	cloud, key := parent.cloud()
+func (in *Inode) LookUpInodeDir(name string, c chan ListBlobsOutput, errc chan error) {
+	cloud, key := in.cloud()
 	key = appendChildName(key, name) + "/"
 
 	resp, err := listBlobsWrapper(cloud, &ListBlobsInput{
@@ -1372,8 +1373,8 @@ func (parent *Inode) LookUpInodeDir(name string, c chan ListBlobsOutput, errc ch
 	c <- *resp
 }
 
-// returned inode has nil Id
-func (parent *Inode) LookUpInodeMaybeDir(name string, fullName string) (inode *Inode, err error) {
+// LookUpInodeMaybeDir returned inode has nil Id
+func (in *Inode) LookUpInodeMaybeDir(name string, fullName string) (inode *Inode, err error) {
 	errObjectChan := make(chan error, 1)
 	objectChan := make(chan HeadBlobOutput, 2)
 	errDirBlobChan := make(chan error, 1)
@@ -1383,18 +1384,18 @@ func (parent *Inode) LookUpInodeMaybeDir(name string, fullName string) (inode *I
 	checking := 3
 	var checkErr [3]error
 
-	cloud, _ := parent.cloud()
+	cloud, _ := in.cloud()
 	if cloud == nil {
 		panic("s3 disabled")
 	}
 
-	go parent.LookUpInodeNotDir(name, objectChan, errObjectChan)
-	if !cloud.Capabilities().DirBlob && !parent.fs.flags.Cheap {
-		go parent.LookUpInodeNotDir(name+"/", objectChan, errDirBlobChan)
-		if !parent.fs.flags.ExplicitDir {
+	go in.LookUpInodeNotDir(name, objectChan, errObjectChan)
+	if !cloud.Capabilities().DirBlob && !in.fs.flags.Cheap {
+		go in.LookUpInodeNotDir(name+"/", objectChan, errDirBlobChan)
+		if !in.fs.flags.ExplicitDir {
 			errDirChan = make(chan error, 1)
 			dirChan = make(chan ListBlobsOutput, 1)
-			go parent.LookUpInodeDir(name, dirChan, errDirChan)
+			go in.LookUpInodeDir(name, dirChan, errDirChan)
 		}
 	}
 
@@ -1402,7 +1403,7 @@ func (parent *Inode) LookUpInodeMaybeDir(name string, fullName string) (inode *I
 		select {
 		case resp := <-objectChan:
 			err = nil
-			inode = NewInode(parent.fs, parent, &name)
+			inode = NewInode(in.fs, in, &name)
 			if !resp.IsDirBlob {
 				// XXX/TODO if both object and object/ exists, return dir
 				inode.SetFromBlobItem(&resp.BlobItemOutput)
@@ -1421,7 +1422,7 @@ func (parent *Inode) LookUpInodeMaybeDir(name string, fullName string) (inode *I
 		case resp := <-dirChan:
 			err = nil
 			if len(resp.Prefixes) != 0 || len(resp.Items) != 0 {
-				inode = NewInode(parent.fs, parent, &name)
+				inode = NewInode(in.fs, in, &name)
 				inode.ToDir()
 				if len(resp.Items) != 0 && *resp.Items[0].Key == name+"/" {
 					// it's actually a dir blob
@@ -1460,17 +1461,17 @@ func (parent *Inode) LookUpInodeMaybeDir(name string, fullName string) (inode *I
 
 		switch checking {
 		case 2:
-			if parent.fs.flags.Cheap {
-				go parent.LookUpInodeNotDir(name+"/", objectChan, errDirBlobChan)
+			if in.fs.flags.Cheap {
+				go in.LookUpInodeNotDir(name+"/", objectChan, errDirBlobChan)
 			}
 		case 1:
-			if parent.fs.flags.ExplicitDir {
+			if in.fs.flags.ExplicitDir {
 				checkErr[2] = fuse.ENOENT
 				goto doneCase
-			} else if parent.fs.flags.Cheap {
+			} else if in.fs.flags.Cheap {
 				errDirChan = make(chan error, 1)
 				dirChan = make(chan ListBlobsOutput, 1)
-				go parent.LookUpInodeDir(name, dirChan, errDirChan)
+				go in.LookUpInodeDir(name, dirChan, errDirChan)
 			}
 			break
 		doneCase:

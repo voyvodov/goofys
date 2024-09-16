@@ -15,6 +15,8 @@
 package internal
 
 import (
+	"os"
+
 	. "github.com/voyvodov/goofys/api/common"
 	. "gopkg.in/check.v1"
 
@@ -35,11 +37,11 @@ func (s *MinioTest) SetUpSuite(t *C) {
 	s.fs = &Goofys{}
 
 	conf := (&S3Config{
-		AccessKey: "Q3AM3UQ867SPQQA43P2F",
-		SecretKey: "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG",
+		AccessKey: "minioadmin",
+		SecretKey: "minioadmin",
 	}).Init()
 	s.flags = FlagStorage{
-		Endpoint: "https://play.minio.io:9000",
+		Endpoint: os.Getenv("TEST_ENDPOINT_URL"),
 		Backend:  conf,
 	}
 

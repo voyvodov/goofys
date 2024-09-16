@@ -39,7 +39,7 @@ type BufferPool struct {
 	pool *sync.Pool
 }
 
-const BUF_SIZE = 5 * 1024 * 1024
+const bufSize = 5 * 1024 * 1024
 
 func maxMemToUse(buffersNow uint64) uint64 {
 	m, err := mem.VirtualMemory()
@@ -52,7 +52,7 @@ func maxMemToUse(buffersNow uint64) uint64 {
 		log.Debugf("amount of available memory from cgroup is: %v", availableMem/1024/1024)
 	}
 
-	if err != nil || availableMem < 0 || availableMem > m.Available {
+	if err != nil || availableMem > m.Available {
 		availableMem = m.Available
 	}
 
@@ -64,8 +64,8 @@ func maxMemToUse(buffersNow uint64) uint64 {
 	log.Debugf("amount of allocated memory: %v %v", ms.Sys/1024/1024, ms.Alloc/1024/1024)
 
 	max := uint64(availableMem+ms.Sys) / 2
-	maxbuffers := MaxUInt64(max/BUF_SIZE, 1)
-	log.Debugf("using up to %v %vMB buffers, now is %v", maxbuffers, BUF_SIZE/1024/1024, buffersNow)
+	maxbuffers := MaxUInt64(max/bufSize, 1)
+	log.Debugf("using up to %v %vMB buffers, now is %v", maxbuffers, bufSize/1024/1024, buffersNow)
 	return maxbuffers
 }
 
@@ -82,20 +82,20 @@ func (pool BufferPool) Init() *BufferPool {
 
 	pool.computedMaxbuffers = pool.maxBuffers
 	pool.pool = &sync.Pool{New: func() interface{} {
-		return make([]byte, 0, BUF_SIZE)
+		return make([]byte, 0, bufSize)
 	}}
 
 	return &pool
 }
 
-// for testing
+// NewBufferPool is for testing
 func NewBufferPool(maxSizeGlobal uint64) *BufferPool {
-	pool := BufferPool{maxBuffers: maxSizeGlobal / BUF_SIZE}.Init()
+	pool := BufferPool{maxBuffers: maxSizeGlobal / bufSize}.Init()
 	return pool
 }
 
 func (pool *BufferPool) RequestBuffer() (buf []byte) {
-	return pool.RequestMultiple(BUF_SIZE, true)[0]
+	return pool.RequestMultiple(bufSize, true)[0]
 }
 
 func (pool *BufferPool) recomputeBufferLimit() {
@@ -108,7 +108,7 @@ func (pool *BufferPool) recomputeBufferLimit() {
 }
 
 func (pool *BufferPool) RequestMultiple(size uint64, block bool) (buffers [][]byte) {
-	nPages := pages(size, BUF_SIZE)
+	nPages := pages(size, bufSize)
 
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
@@ -129,7 +129,7 @@ func (pool *BufferPool) RequestMultiple(size uint64, block bool) (buffers [][]by
 					// free memory AND correct our limits, yet we still can't allocate.
 					// it's likely that we are simply asking for too much
 					log.Errorf("Unable to allocate %d bytes, limit is %d bytes",
-						nPages*BUF_SIZE, pool.computedMaxbuffers*BUF_SIZE)
+						nPages*bufSize, pool.computedMaxbuffers*bufSize)
 					panic("OOM")
 				}
 			}
@@ -142,8 +142,8 @@ func (pool *BufferPool) RequestMultiple(size uint64, block bool) (buffers [][]by
 	for i := 0; i < nPages; i++ {
 		pool.numBuffers++
 		pool.totalBuffers++
-		buf := pool.pool.Get()
-		buffers = append(buffers, buf.([]byte))
+		buf := pool.pool.Get().([]byte)
+		buffers = append(buffers, buf)
 	}
 	return
 }
@@ -160,6 +160,7 @@ func (pool *BufferPool) Free(buf []byte) {
 	defer pool.mu.Unlock()
 
 	buf = buf[:0]
+	//lint:ignore SA6002 should be generally okey in our case
 	pool.pool.Put(buf)
 	pool.numBuffers--
 	pool.cond.Signal()
@@ -211,7 +212,7 @@ func (mb *MBuf) Len() (length int) {
 	return
 }
 
-// seek only seeks the reader
+// Seek only seeks the reader
 func (mb *MBuf) Seek(offset int64, whence int) (int64, error) {
 	switch whence {
 	case 0: // relative to beginning

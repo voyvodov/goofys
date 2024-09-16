@@ -160,7 +160,7 @@ func NewAZBlob(container string, config *AZBlobConfig) (*AZBlob, error) {
 	if config.SasToken == nil {
 		credential, err := azblob.NewSharedKeyCredential(config.AccountName, config.AccountKey)
 		if err != nil {
-			return nil, fmt.Errorf("Unable to construct credential: %v", err)
+			return nil, fmt.Errorf("unable to construct credential: %v", err)
 		}
 
 		p = azblob.NewPipeline(credential, po)
@@ -267,7 +267,7 @@ func (b *AZBlob) refreshToken() (*azblob.ContainerURL, error) {
 }
 
 func parseSasToken(token string) (expire time.Time) {
-	expire = TIME_MAX
+	expire = timeMax
 
 	parts, err := url.ParseQuery(token)
 	if err != nil {
@@ -285,7 +285,7 @@ func parseSasToken(token string) (expire time.Time) {
 		// sometimes they only have the date
 		expire, err = time.Parse("2006-01-02", se)
 		if err != nil {
-			expire = TIME_MAX
+			expire = timeMax
 		}
 	}
 	return
@@ -301,10 +301,10 @@ func (b *AZBlob) updateToken() (*azblob.ContainerURL, error) {
 	expire := parseSasToken(token)
 	azbLog.Infof("token for %v refreshed, next expire at %v", b.bucket, expire.String())
 
-	sUrl := b.bareURL + "?" + token
-	u, err := url.Parse(sUrl)
+	sURL := b.bareURL + "?" + token
+	u, err := url.Parse(sURL)
 	if err != nil {
-		azbLog.Errorf("Unable to construct service URL: %v", sUrl)
+		azbLog.Errorf("Unable to construct service URL: %v", sURL)
 		return nil, fuse.EINVAL
 	}
 
@@ -393,7 +393,7 @@ func mapAZBError(err error) error {
 		case "AuthorizationFailure": // from Azurite emulator
 			return syscall.EACCES
 		default:
-			err = mapHttpError(stgErr.Response().StatusCode)
+			err = mapHTTPError(stgErr.Response().StatusCode)
 			if err != nil {
 				return err
 			} else {
@@ -408,7 +408,7 @@ func mapAZBError(err error) error {
 
 func pMetadata(m map[string]string) map[string]*string {
 	metadata := make(map[string]*string)
-	for k, _ := range m {
+	for k := range m {
 		k = strings.ToLower(k)
 		v := m[k]
 		metadata[k] = &v
@@ -522,7 +522,7 @@ func (b *AZBlob) ListBlobs(param *ListBlobsInput) (*ListBlobsOutput, error) {
 			return nil, mapAZBError(err)
 		}
 
-		for i, _ := range resp.Segment.BlobPrefixes {
+		for i := range resp.Segment.BlobPrefixes {
 			p := resp.Segment.BlobPrefixes[i]
 			prefixes = append(prefixes, BlobPrefixOutput{Prefix: &p.Name})
 		}
@@ -565,7 +565,7 @@ func (b *AZBlob) ListBlobs(param *ListBlobsInput) (*ListBlobsOutput, error) {
 	}
 	var sortItems bool
 
-	for idx, _ := range blobItems {
+	for idx := range blobItems {
 		i := &blobItems[idx]
 		p := &i.Properties
 
@@ -818,13 +818,13 @@ func (b *AZBlob) PutBlob(param *PutBlobInput) (*PutBlobOutput, error) {
 
 func (b *AZBlob) MultipartBlobBegin(param *MultipartBlobBeginInput) (*MultipartBlobCommitInput, error) {
 	// we can have up to 50K parts, so %05d should be sufficient
-	uploadId := uuid.New().String() + "::%05d"
+	uploadID := uuid.New().String() + "::%05d"
 
 	// this is implicitly done on the server side
 	return &MultipartBlobCommitInput{
 		Key:      &param.Key,
 		Metadata: param.Metadata,
-		UploadId: &uploadId,
+		UploadID: &uploadID,
 		Parts:    make([]*string, 50000), // at most 50K parts
 	}, nil
 }
@@ -836,18 +836,18 @@ func (b *AZBlob) MultipartBlobAdd(param *MultipartBlobAddInput) (*MultipartBlobA
 	}
 
 	blob := c.NewBlockBlobURL(*param.Commit.Key)
-	blockId := fmt.Sprintf(*param.Commit.UploadId, param.PartNumber)
-	base64BlockId := base64.StdEncoding.EncodeToString([]byte(blockId))
+	blockID := fmt.Sprintf(*param.Commit.UploadID, param.PartNumber)
+	base64BlockID := base64.StdEncoding.EncodeToString([]byte(blockID))
 
 	atomic.AddUint32(&param.Commit.NumParts, 1)
 
-	_, err = blob.StageBlock(context.TODO(), base64BlockId, param.Body,
+	_, err = blob.StageBlock(context.TODO(), base64BlockID, param.Body,
 		azblob.LeaseAccessConditions{}, nil, azblob.ClientProvidedKeyOptions{})
 	if err != nil {
 		return nil, mapAZBError(err)
 	}
 
-	param.Commit.Parts[param.PartNumber-1] = &base64BlockId
+	param.Commit.Parts[param.PartNumber-1] = &base64BlockID
 
 	return &MultipartBlobAddOutput{}, nil
 }

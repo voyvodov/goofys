@@ -62,7 +62,7 @@ func (p returnRequestPolicy) Do(ctx context.Context, r pipeline.Request) (pipeli
 	return resp, nil
 }
 
-// hijack the SharedKeyCredentials signing code from azure-storage-blob-go
+// WithAuthorization hijack the SharedKeyCredentials signing code from azure-storage-blob-go
 // https://github.com/Azure/go-autorest/issues/456
 func (config *AZBlobConfig) WithAuthorization() autorest.PrepareDecorator {
 	return func(p autorest.Preparer) autorest.Preparer {
@@ -97,7 +97,7 @@ type ADLv2Config struct {
 
 type AzureAuthorizerConfig struct {
 	Log      *LogHandle
-	TenantId string
+	TenantID string
 }
 
 var azbLog = GetLogger("azblob")
@@ -118,10 +118,10 @@ func tokenToAuthorizer(t *cli.Token) (autorest.Authorizer, error) {
 		return nil, err
 	}
 
-	tenantId := u.Path
+	tenantID := u.Path
 	u.Path = ""
 
-	oauth, err := adal.NewOAuthConfig(u.String(), tenantId)
+	oauth, err := adal.NewOAuthConfig(u.String(), tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -161,12 +161,12 @@ func msiToAuthorizer(mc auth.MSIConfig) (autorest.Authorizer, error) {
 }
 
 func (c AzureAuthorizerConfig) Authorizer() (autorest.Authorizer, error) {
-	if c.TenantId == "" {
+	if c.TenantID == "" {
 		defaultSubscription, err := azureDefaultSubscription()
 		if err != nil {
 			return nil, err
 		}
-		c.TenantId = defaultSubscription.TenantID
+		c.TenantID = defaultSubscription.TenantID
 	}
 
 	env, err := auth.GetSettingsFromEnvironment()
@@ -194,7 +194,7 @@ func (c AzureAuthorizerConfig) Authorizer() (autorest.Authorizer, error) {
 		env.Values[auth.ActiveDirectoryEndpoint] = env.Environment.ActiveDirectoryEndpoint
 	}
 	adEndpoint := strings.Trim(env.Values[auth.ActiveDirectoryEndpoint], "/") +
-		"/" + c.TenantId
+		"/" + c.TenantID
 	c.Log.Debugf("looking for access token for %v", adEndpoint)
 
 	accessTokensPath, err := cli.AccessTokensPath()
@@ -238,7 +238,7 @@ func azureDefaultSubscription() (*cli.Subscription, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("Unable to find default azure subscription id")
+	return nil, fmt.Errorf("unable to find default azure subscription id")
 }
 
 func azureAccountsClient(account string) (azblob.AccountsClient, error) {
@@ -253,7 +253,7 @@ func azureAccountsClient(account string) (azblob.AccountsClient, error) {
 
 	authorizer, err := AzureAuthorizerConfig{
 		Log:      azbLog,
-		TenantId: defaultSubscription.TenantID,
+		TenantID: defaultSubscription.TenantID,
 	}.Authorizer()
 	if err != nil {
 		return c, err
@@ -274,13 +274,13 @@ func azureFindAccount(client azblob.AccountsClient, account string) (*azblob.End
 			// /subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}/...
 			parts := strings.SplitN(*acc.ID, "/", 6)
 			if len(parts) != 6 {
-				return nil, "", fmt.Errorf("Malformed account id: %v", *acc.ID)
+				return nil, "", fmt.Errorf("malformed account id: %v", *acc.ID)
 			}
 			return acc.PrimaryEndpoints, parts[4], nil
 		}
 	}
 
-	return nil, "", fmt.Errorf("Azure account not found: %v", account)
+	return nil, "", fmt.Errorf("azure account not found: %v", account)
 }
 
 func AzureBlobConfig(endpoint string, location string, storageType string) (config AZBlobConfig, err error) {
@@ -341,7 +341,7 @@ func AzureBlobConfig(endpoint string, location string, storageType string) (conf
 	}
 	// at this point I have to have the account
 	if account == "" {
-		err = fmt.Errorf("Missing account: configure via AZURE_STORAGE_ACCOUNT "+
+		err = fmt.Errorf("missing account: configure via AZURE_STORAGE_ACCOUNT "+
 			"or %v/config", configDir)
 		return
 	}
@@ -355,7 +355,7 @@ func AzureBlobConfig(endpoint string, location string, storageType string) (conf
 			endpoints, resourceGroup, err = azureFindAccount(client, account)
 			if err != nil {
 				if key == "" {
-					err = fmt.Errorf("Missing key: configure via AZURE_STORAGE_KEY "+
+					err = fmt.Errorf("missing key: configure via AZURE_STORAGE_KEY "+
 						"or %v/config", configDir)
 					return
 				}
@@ -372,7 +372,7 @@ func AzureBlobConfig(endpoint string, location string, storageType string) (conf
 				var keysRes azblob.AccountListKeysResult
 				keysRes, err = client.ListKeys(context.TODO(), resourceGroup, account, azblob.Kerb)
 				if err != nil || len(*keysRes.Keys) == 0 {
-					err = fmt.Errorf("Missing key: configure via AZURE_STORAGE_KEY "+
+					err = fmt.Errorf("missing key: configure via AZURE_STORAGE_KEY "+
 						"or %v/config", configDir)
 					return
 				}
@@ -384,8 +384,10 @@ func AzureBlobConfig(endpoint string, location string, storageType string) (conf
 						break
 					}
 				}
-				// if not just take the first one
-				key = *(*keysRes.Keys)[0].Value
+				if key == "" {
+					// if not just take the first one
+					key = *(*keysRes.Keys)[0].Value
+				}
 			}
 		} else {
 			if key == "" {

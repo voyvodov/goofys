@@ -16,7 +16,6 @@
 package main
 
 import (
-	"io/ioutil"
 	"strconv"
 
 	goofys "github.com/voyvodov/goofys/api"
@@ -221,7 +220,7 @@ func main() {
 
 			if flags.PidFile != "" {
 				// Write out a Pid file
-				err = ioutil.WriteFile(flags.PidFile, []byte(strconv.Itoa(os.Getpid())), 0644)
+				err = os.WriteFile(flags.PidFile, []byte(strconv.Itoa(os.Getpid())), 0644)
 				if err != nil {
 					//log.Fatalf("Error writing pid file: %v", err)
 					log.Printf("Error writing pid file: %v", err)
