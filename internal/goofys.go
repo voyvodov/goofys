@@ -15,7 +15,7 @@
 package internal
 
 import (
-	. "github.com/StatCan/goofys/api/common"
+	. "github.com/voyvodov/goofys/api/common"
 
 	"context"
 	"fmt"
@@ -932,7 +932,7 @@ func (fs *Goofys) SyncFile(
 	op *fuseops.SyncFileOp) (err error) {
 
 	// intentionally ignored, so that write()/sync()/write() works
-	// see https://github.com/kahing/goofys/issues/154
+	// see https://github.com/voyvodov/goofys/issues/154
 	return
 }
 
@@ -946,7 +946,7 @@ func (fs *Goofys) FlushFile(
 
 	// If the file handle has a tgid, then flush the file only if the
 	// incoming request's tgid matches the tgid in the file handle.
-	// This check helps us with scenarios like https://github.com/kahing/goofys/issues/273
+	// This check helps us with scenarios like https://github.com/voyvodov/goofys/issues/273
 	// Also see goofys_test.go:TestClientForkExec.
 	if fh.Tgid != nil {
 		tgid, err := GetTgid(op.OpContext.Pid)

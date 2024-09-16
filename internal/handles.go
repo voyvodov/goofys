@@ -128,7 +128,7 @@ func deepCopyBlobItemOputput(item *BlobItemOutput) BlobItemOutput {
 func (inode *Inode) SetFromBlobItem(item *BlobItemOutput) {
 	// copy item so they won't hold back references to the HTTP
 	// responses and SDK objects. See discussion in
-	// https://github.com/kahing/goofys/pull/547
+	// https://github.com/voyvodov/goofys/pull/547
 	itemcopy := deepCopyBlobItemOputput(item)
 	inode.mu.Lock()
 	defer inode.mu.Unlock()

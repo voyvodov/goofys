@@ -1,8 +1,8 @@
 package main
 
 import (
-	goofys "github.com/StatCan/goofys/api"
-	common "github.com/StatCan/goofys/api/common"
+	goofys "github.com/voyvodov/goofys/api"
+	common "github.com/voyvodov/goofys/api/common"
 
 	"context"
 	"fmt"
