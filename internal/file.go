@@ -415,7 +415,7 @@ func (fh *FileHandle) readFromReadAhead(offset uint64, buf []byte) (bytesRead in
 		if err != nil {
 			if err == io.EOF && readAheadBuf.size != 0 {
 				// in case we hit
-				// https://github.com/kahing/goofys/issues/464
+				// https://github.com/voyvodov/goofys/issues/464
 				// again, this will convert that into
 				// an error
 				fuseLog.Errorf("got EOF when data remains: %v", *fh.inode.FullName())

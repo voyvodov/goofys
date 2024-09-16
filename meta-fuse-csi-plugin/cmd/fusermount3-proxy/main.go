@@ -22,9 +22,9 @@ import (
 	"strconv"
 	"syscall"
 
-	starter "github.com/StatCan/goofys/meta-fuse-csi-plugin/pkg/fuse_starter"
-	"github.com/StatCan/goofys/meta-fuse-csi-plugin/pkg/util"
 	flag "github.com/spf13/pflag"
+	starter "github.com/voyvodov/goofys/meta-fuse-csi-plugin/pkg/fuse_starter"
+	"github.com/voyvodov/goofys/meta-fuse-csi-plugin/pkg/util"
 
 	"k8s.io/klog/v2"
 )

@@ -15,7 +15,7 @@
 package internal
 
 import (
-	. "github.com/StatCan/goofys/api/common"
+	. "github.com/voyvodov/goofys/api/common"
 	. "gopkg.in/check.v1"
 
 	"context"

@@ -24,9 +24,9 @@ import (
 	"strings"
 	"time"
 
-	csimounter "github.com/StatCan/goofys/meta-fuse-csi-plugin/pkg/csi_mounter"
-	"github.com/StatCan/goofys/meta-fuse-csi-plugin/pkg/util"
 	csi "github.com/container-storage-interface/spec/lib/go/csi"
+	csimounter "github.com/voyvodov/goofys/meta-fuse-csi-plugin/pkg/csi_mounter"
+	"github.com/voyvodov/goofys/meta-fuse-csi-plugin/pkg/util"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"

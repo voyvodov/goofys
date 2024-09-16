@@ -15,7 +15,7 @@
 package internal
 
 import (
-	. "github.com/StatCan/goofys/api/common"
+	. "github.com/voyvodov/goofys/api/common"
 
 	"bufio"
 	"bytes"
@@ -2980,7 +2980,7 @@ func (s *GoofysTest) TestRead403(t *C) {
 	t.Assert(err, Equals, syscall.EACCES)
 
 	// now that the S3 GET has failed, try again, see
-	// https://github.com/kahing/goofys/pull/243
+	// https://github.com/voyvodov/goofys/pull/243
 	_, err = fh.ReadFile(0, buf)
 	t.Assert(err, Equals, syscall.EACCES)
 }
