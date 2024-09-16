@@ -19,9 +19,9 @@ import (
 	"io/ioutil"
 	"strconv"
 
-	goofys "github.com/StatCan/goofys/api"
-	. "github.com/StatCan/goofys/api/common"
-	. "github.com/StatCan/goofys/internal"
+	goofys "github.com/voyvodov/goofys/api"
+	. "github.com/voyvodov/goofys/api/common"
+	. "github.com/voyvodov/goofys/internal"
 
 	"fmt"
 	"os"

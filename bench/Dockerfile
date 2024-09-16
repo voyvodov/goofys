@@ -24,14 +24,14 @@ RUN git clone --depth 1 https://github.com/s3fs-fuse/s3fs-fuse.git && \
     cd s3fs-fuse && ./autogen.sh && ./configure && make -j8 > /dev/null && make install && \
     cd .. && rm -Rf s3fs-fuse
 
-RUN curl -L -O https://github.com/kahing/catfs/releases/download/v0.8.0/catfs && \
+RUN curl -L -O https://github.com/voyvodov/catfs/releases/download/v0.8.0/catfs && \
     mv catfs /usr/bin && chmod 0755 /usr/bin/catfs
 
 # ideally I want to clear out all the go deps too but there's no
 # way to do that with ADD
 ENV PATH=$PATH:/root/go/bin
-ADD . /root/go/src/github.com/StatCan/goofys
-WORKDIR /root/go/src/github.com/StatCan/goofys
+ADD . /root/go/src/github.com/voyvodov/goofys
+WORKDIR /root/go/src/github.com/voyvodov/goofys
 RUN go get . && make install
 
-ENTRYPOINT ["/root/go/src/github.com/StatCan/goofys/bench/run_bench.sh"]
+ENTRYPOINT ["/root/go/src/github.com/voyvodov/goofys/bench/run_bench.sh"]

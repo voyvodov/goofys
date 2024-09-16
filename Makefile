@@ -2,7 +2,7 @@ export CGO_ENABLED=0
 
 VERSION := `git describe --abbrev=0 --tags || echo "0.0.0"`
 BUILD := `git rev-parse --short HEAD`
-LDFLAGS=-ldflags "-X=github.com/kahing/goofys/internal.VersionNumber=$(VERSION) -X=github.com/kahing/goofys/internal.VersionHash=$(BUILD)"
+LDFLAGS=-ldflags "-X=github.com/voyvodov/goofys/internal.VersionNumber=$(VERSION) -X=github.com/voyvodov/goofys/internal.VersionHash=$(BUILD)"
 
 
 semgrep ?= -

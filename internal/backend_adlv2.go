@@ -16,7 +16,7 @@
 package internal
 
 import (
-	. "github.com/StatCan/goofys/api/common"
+	. "github.com/voyvodov/goofys/api/common"
 
 	"context"
 	"encoding/base64"

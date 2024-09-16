@@ -392,7 +392,7 @@ if [ "$t" = "cleanup" ]; then
     test=dummy
 fi
 
-# for https://github.com/kahing/goofys/issues/64
+# for https://github.com/voyvodov/goofys/issues/64
 # quote: There are 5 concurrent transfers gong at a time.
 # Data file size is often 100-400MB.
 # Regarding the number of transfers, I think it's about 200 files.
