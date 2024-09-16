@@ -144,16 +144,18 @@ type RetryHTTPLogger struct {
 	*LogHandle
 }
 
-const DEBUG_TAG = "[DEBUG]"
-const ERR_TAG = "[ERR]"
+const (
+	debugTag = "[DEBUG]"
+	errTag   = "[ERR]"
+)
 
 func (logger RetryHTTPLogger) Printf(format string, args ...interface{}) {
 	// unfortunately logrus.ParseLevel uses "error" instead of "err"
 	// so we have to map this ourselves
-	if strings.HasPrefix(format, DEBUG_TAG) {
-		logger.LogHandle.Debugf(format[len(DEBUG_TAG)+1:], args...)
-	} else if strings.HasPrefix(format, ERR_TAG) {
-		logger.LogHandle.Errorf(format[len(ERR_TAG)+1:], args...)
+	if strings.HasPrefix(format, debugTag) {
+		logger.LogHandle.Debugf(format[len(debugTag)+1:], args...)
+	} else if strings.HasPrefix(format, errTag) {
+		logger.LogHandle.Errorf(format[len(errTag)+1:], args...)
 	} else {
 		logger.LogHandle.Infof(format, args...)
 	}

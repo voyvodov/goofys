@@ -24,7 +24,7 @@ import (
 	"github.com/shirou/gopsutil/v3/process"
 )
 
-var TIME_MAX = time.Unix(1<<63-62135596801, 999999999)
+var timeMax = time.Unix(1<<63-62135596801, 999999999)
 
 func MaxInt(a, b int) int {
 	if a > b {
@@ -85,9 +85,8 @@ func MaxUInt64(a, b uint64) uint64 {
 func MinUInt64(a, b uint64) uint64 {
 	if a < b {
 		return a
-	} else {
-		return b
 	}
+	return b
 }
 
 func PBool(v bool) *bool {
@@ -215,7 +214,7 @@ func GetTgid(pid uint32) (tgid *int32, err error) {
 
 func PMetadata(m map[string]string) map[string]*string {
 	metadata := make(map[string]*string)
-	for k, _ := range m {
+	for k := range m {
 		k = strings.ToLower(k)
 		v := m[k]
 		metadata[k] = &v
@@ -232,7 +231,7 @@ func NilMetadata(m map[string]*string) map[string]string {
 	return metadata
 }
 
-// The following functions are useful to debug byte sizes
+// ConvertBytesToIEC are useful to debug byte sizes
 func ConvertBytesToIEC(size int64) string {
 	var unit int64 = 1024
 	if size < unit {

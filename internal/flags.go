@@ -20,7 +20,6 @@ import (
 
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"strings"
@@ -317,8 +316,6 @@ func parseOptions(m map[string]string, s string) {
 
 		m[name] = value
 	}
-
-	return
 }
 
 // PopulateFlags adds the flags accepted by run to the supplied flag set, returning the
@@ -331,8 +328,8 @@ func PopulateFlags(c *cli.Context) (ret *FlagStorage) {
 		MountOptions: make(map[string]string),
 		DirMode:      os.FileMode(c.Int("dir-mode")),
 		FileMode:     os.FileMode(c.Int("file-mode")),
-		Uid:          uint32(c.Int("uid")),
-		Gid:          uint32(c.Int("gid")),
+		UID:          uint32(c.Int("uid")),
+		GID:          uint32(c.Int("gid")),
 
 		// Tuning,
 		Cheap:        c.Bool("cheap"),
@@ -409,7 +406,7 @@ func PopulateFlags(c *cli.Context) (ret *FlagStorage) {
 		}
 
 		if _, ok := flags.MountOptions["allow_other"]; !ok {
-			flags.MountPointCreated, err = ioutil.TempDir("", ".goofys-mnt")
+			flags.MountPointCreated, err = os.MkdirTemp("", ".goofys-mnt")
 			if err != nil {
 				io.WriteString(cli.ErrWriter,
 					fmt.Sprintf("Unable to create temp dir: %v", err))

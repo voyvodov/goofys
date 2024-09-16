@@ -44,7 +44,7 @@ func (i InodeAttributes) Equal(other InodeAttributes) bool {
 }
 
 type Inode struct {
-	Id         fuseops.InodeID
+	ID         fuseops.InodeID
 	Name       *string
 	fs         *Goofys
 	Attributes InodeAttributes
@@ -89,7 +89,7 @@ type Inode struct {
 }
 
 func NewInode(fs *Goofys, parent *Inode, name *string) (inode *Inode) {
-	if strings.Index(*name, "/") != -1 {
+	if strings.Contains(*name, "/") {
 		fuseLog.Errorf("%v is not a valid name", *name)
 	}
 
@@ -125,52 +125,52 @@ func deepCopyBlobItemOputput(item *BlobItemOutput) BlobItemOutput {
 	}
 }
 
-func (inode *Inode) SetFromBlobItem(item *BlobItemOutput) {
+func (in *Inode) SetFromBlobItem(item *BlobItemOutput) {
 	// copy item so they won't hold back references to the HTTP
 	// responses and SDK objects. See discussion in
 	// https://github.com/voyvodov/goofys/pull/547
 	itemcopy := deepCopyBlobItemOputput(item)
-	inode.mu.Lock()
-	defer inode.mu.Unlock()
+	in.mu.Lock()
+	defer in.mu.Unlock()
 
-	inode.Attributes.Size = itemcopy.Size
+	in.Attributes.Size = itemcopy.Size
 	// don't want to point to the attribute because that
 	// can get updated
-	size := inode.Attributes.Size
-	inode.KnownSize = &size
+	size := in.Attributes.Size
+	in.KnownSize = &size
 	if item.LastModified != nil {
-		inode.Attributes.Mtime = *itemcopy.LastModified
+		in.Attributes.Mtime = *itemcopy.LastModified
 	} else {
-		inode.Attributes.Mtime = inode.fs.rootAttrs.Mtime
+		in.Attributes.Mtime = in.fs.rootAttrs.Mtime
 	}
 	if item.ETag != nil {
-		inode.s3Metadata["etag"] = []byte(*itemcopy.ETag)
-		inode.knownETag = itemcopy.ETag
+		in.s3Metadata["etag"] = []byte(*itemcopy.ETag)
+		in.knownETag = itemcopy.ETag
 	} else {
-		delete(inode.s3Metadata, "etag")
+		delete(in.s3Metadata, "etag")
 	}
 	if item.StorageClass != nil {
-		inode.s3Metadata["storage-class"] = []byte(*itemcopy.StorageClass)
+		in.s3Metadata["storage-class"] = []byte(*itemcopy.StorageClass)
 	} else {
-		delete(inode.s3Metadata, "storage-class")
+		delete(in.s3Metadata, "storage-class")
 	}
 	now := time.Now()
 	// don't want to update time if this inode is setup to never expire
-	if inode.AttrTime.Before(now) {
-		inode.AttrTime = now
+	if in.AttrTime.Before(now) {
+		in.AttrTime = now
 	}
 }
 
 // LOCKS_REQUIRED(inode.mu)
-func (inode *Inode) cloud() (cloud StorageBackend, path string) {
+func (in *Inode) cloud() (cloud StorageBackend, path string) {
 	var prefix string
 	var dir *Inode
 
-	if inode.dir == nil {
-		path = *inode.Name
-		dir = inode.Parent
+	if in.dir == nil {
+		path = *in.Name
+		dir = in.Parent
 	} else {
-		dir = inode
+		dir = in
 	}
 
 	for p := dir; p != nil; p = p.Parent {
@@ -212,115 +212,115 @@ func (inode *Inode) cloud() (cloud StorageBackend, path string) {
 	return
 }
 
-func (inode *Inode) FullName() *string {
-	if inode.Parent == nil {
-		return inode.Name
+func (in *Inode) FullName() *string {
+	if in.Parent == nil {
+		return in.Name
 	} else {
-		s := inode.Parent.getChildName(*inode.Name)
+		s := in.Parent.getChildName(*in.Name)
 		return &s
 	}
 }
 
-func (inode *Inode) touch() {
-	inode.Attributes.Mtime = time.Now()
+func (in *Inode) touch() {
+	in.Attributes.Mtime = time.Now()
 }
 
-func (inode *Inode) InflateAttributes() (attr fuseops.InodeAttributes) {
-	mtime := inode.Attributes.Mtime
+func (in *Inode) InflateAttributes() (attr fuseops.InodeAttributes) {
+	mtime := in.Attributes.Mtime
 	if mtime.IsZero() {
-		mtime = inode.fs.rootAttrs.Mtime
+		mtime = in.fs.rootAttrs.Mtime
 	}
 
 	attr = fuseops.InodeAttributes{
-		Size:   inode.Attributes.Size,
+		Size:   in.Attributes.Size,
 		Atime:  mtime,
 		Mtime:  mtime,
 		Ctime:  mtime,
 		Crtime: mtime,
-		Uid:    inode.fs.flags.Uid,
-		Gid:    inode.fs.flags.Gid,
+		Uid:    in.fs.flags.UID,
+		Gid:    in.fs.flags.GID,
 	}
 
-	if inode.dir != nil {
+	if in.dir != nil {
 		attr.Nlink = 2
-		attr.Mode = inode.fs.flags.DirMode | os.ModeDir
+		attr.Mode = in.fs.flags.DirMode | os.ModeDir
 	} else {
 		attr.Nlink = 1
-		attr.Mode = inode.fs.flags.FileMode
+		attr.Mode = in.fs.flags.FileMode
 	}
 	return
 }
 
-func (inode *Inode) logFuse(op string, args ...interface{}) {
+func (in *Inode) logFuse(op string, args ...interface{}) {
 	if fuseLog.Level >= logrus.DebugLevel {
-		fuseLog.Debugln(op, inode.Id, *inode.FullName(), args)
+		fuseLog.Debugln(op, in.ID, *in.FullName(), args)
 	}
 }
 
-func (inode *Inode) errFuse(op string, args ...interface{}) {
-	fuseLog.Errorln(op, inode.Id, *inode.FullName(), args)
+func (in *Inode) errFuse(op string, args ...interface{}) {
+	fuseLog.Errorln(op, in.ID, *in.FullName(), args)
 }
 
-func (inode *Inode) ToDir() {
-	if inode.dir == nil {
-		inode.Attributes = InodeAttributes{
+func (in *Inode) ToDir() {
+	if in.dir == nil {
+		in.Attributes = InodeAttributes{
 			Size: 4096,
 			// Mtime intentionally not initialized
 		}
-		inode.dir = &DirInodeData{}
-		inode.KnownSize = &inode.fs.rootAttrs.Size
+		in.dir = &DirInodeData{}
+		in.KnownSize = &in.fs.rootAttrs.Size
 	}
 }
 
+// Ref returns a resurrect bool
 // LOCKS_REQUIRED(fs.mu)
 // XXX why did I put lock required? This used to return a resurrect bool
 // which no long does anything, need to look into that to see if
 // that was legacy
-func (inode *Inode) Ref() {
-	inode.logFuse("Ref", inode.refcnt)
+func (in *Inode) Ref() {
+	in.logFuse("Ref", in.refcnt)
 
-	inode.refcnt++
-	return
+	in.refcnt++
 }
 
-func (inode *Inode) DeRef(n uint64) (stale bool) {
-	inode.logFuse("DeRef", n, inode.refcnt)
+func (in *Inode) DeRef(n uint64) (stale bool) {
+	in.logFuse("DeRef", n, in.refcnt)
 
-	if inode.refcnt < n {
-		panic(fmt.Sprintf("deref %v from %v", n, inode.refcnt))
+	if in.refcnt < n {
+		panic(fmt.Sprintf("deref %v from %v", n, in.refcnt))
 	}
 
-	inode.refcnt -= n
+	in.refcnt -= n
 
-	stale = (inode.refcnt == 0)
+	stale = (in.refcnt == 0)
 	return
 }
 
-func (inode *Inode) GetAttributes() (*fuseops.InodeAttributes, error) {
+func (in *Inode) GetAttributes() (*fuseops.InodeAttributes, error) {
 	// XXX refresh attributes
-	inode.logFuse("GetAttributes")
-	if inode.Invalid {
+	in.logFuse("GetAttributes")
+	if in.Invalid {
 		return nil, fuse.ENOENT
 	}
-	attr := inode.InflateAttributes()
+	attr := in.InflateAttributes()
 	return &attr, nil
 }
 
-func (inode *Inode) isDir() bool {
-	return inode.dir != nil
+func (in *Inode) isDir() bool {
+	return in.dir != nil
 }
 
 // LOCKS_REQUIRED(inode.mu)
-func (inode *Inode) fillXattrFromHead(resp *HeadBlobOutput) {
-	inode.userMetadata = make(map[string][]byte)
+func (in *Inode) fillXattrFromHead(resp *HeadBlobOutput) {
+	in.userMetadata = make(map[string][]byte)
 
 	if resp.ETag != nil {
-		inode.s3Metadata["etag"] = []byte(*resp.ETag)
+		in.s3Metadata["etag"] = []byte(*resp.ETag)
 	}
 	if resp.StorageClass != nil {
-		inode.s3Metadata["storage-class"] = []byte(*resp.StorageClass)
+		in.s3Metadata["storage-class"] = []byte(*resp.StorageClass)
 	} else {
-		inode.s3Metadata["storage-class"] = []byte("STANDARD")
+		in.s3Metadata["storage-class"] = []byte("STANDARD")
 	}
 
 	for k, v := range resp.Metadata {
@@ -329,33 +329,33 @@ func (inode *Inode) fillXattrFromHead(resp *HeadBlobOutput) {
 		if err != nil {
 			value = *v
 		}
-		inode.userMetadata[k] = []byte(value)
+		in.userMetadata[k] = []byte(value)
 	}
 }
 
 // LOCKS_REQUIRED(inode.mu)
-func (inode *Inode) fillXattr() (err error) {
-	if !inode.ImplicitDir && inode.userMetadata == nil {
+func (in *Inode) fillXattr() (err error) {
+	if !in.ImplicitDir && in.userMetadata == nil {
 
-		fullName := *inode.FullName()
-		if inode.isDir() {
+		fullName := *in.FullName()
+		if in.isDir() {
 			fullName += "/"
 		}
 
-		cloud, key := inode.cloud()
+		cloud, key := in.cloud()
 		params := &HeadBlobInput{Key: key}
 		resp, err := cloud.HeadBlob(params)
 		if err != nil {
 			err = mapAwsError(err)
 			if err == fuse.ENOENT {
 				err = nil
-				if inode.isDir() {
-					inode.ImplicitDir = true
+				if in.isDir() {
+					in.ImplicitDir = true
 				}
 			}
 			return err
 		} else {
-			inode.fillXattrFromHead(resp)
+			in.fillXattrFromHead(resp)
 		}
 	}
 
@@ -363,10 +363,10 @@ func (inode *Inode) fillXattr() (err error) {
 }
 
 // LOCKS_REQUIRED(inode.mu)
-func (inode *Inode) getXattrMap(name string, userOnly bool) (
+func (in *Inode) getXattrMap(name string, userOnly bool) (
 	meta map[string][]byte, newName string, err error) {
 
-	cloud, _ := inode.cloud()
+	cloud, _ := in.cloud()
 	xattrPrefix := cloud.Capabilities().Name + "."
 
 	if strings.HasPrefix(name, xattrPrefix) {
@@ -375,15 +375,15 @@ func (inode *Inode) getXattrMap(name string, userOnly bool) (
 		}
 
 		newName = name[len(xattrPrefix):]
-		meta = inode.s3Metadata
+		meta = in.s3Metadata
 	} else if strings.HasPrefix(name, "user.") {
-		err = inode.fillXattr()
+		err = in.fillXattr()
 		if err != nil {
 			return nil, "", err
 		}
 
 		newName = name[5:]
-		meta = inode.userMetadata
+		meta = in.userMetadata
 	} else {
 		if userOnly {
 			return nil, "", syscall.EPERM
@@ -409,25 +409,25 @@ func convertMetadata(meta map[string][]byte) (metadata map[string]*string) {
 }
 
 // LOCKS_REQUIRED(inode.mu)
-func (inode *Inode) updateXattr() (err error) {
-	cloud, key := inode.cloud()
+func (in *Inode) updateXattr() (err error) {
+	cloud, key := in.cloud()
 	_, err = cloud.CopyBlob(&CopyBlobInput{
 		Source:      key,
 		Destination: key,
-		Size:        &inode.Attributes.Size,
-		ETag:        aws.String(string(inode.s3Metadata["etag"])),
-		Metadata:    convertMetadata(inode.userMetadata),
+		Size:        &in.Attributes.Size,
+		ETag:        aws.String(string(in.s3Metadata["etag"])),
+		Metadata:    convertMetadata(in.userMetadata),
 	})
 	return
 }
 
-func (inode *Inode) SetXattr(name string, value []byte, flags uint32) error {
-	inode.logFuse("SetXattr", name)
+func (in *Inode) SetXattr(name string, value []byte, flags uint32) error {
+	in.logFuse("SetXattr", name)
 
-	inode.mu.Lock()
-	defer inode.mu.Unlock()
+	in.mu.Lock()
+	defer in.mu.Unlock()
 
-	meta, name, err := inode.getXattrMap(name, true)
+	meta, name, err := in.getXattrMap(name, true)
 	if err != nil {
 		return err
 	}
@@ -446,37 +446,37 @@ func (inode *Inode) SetXattr(name string, value []byte, flags uint32) error {
 	}
 
 	meta[name] = Dup(value)
-	err = inode.updateXattr()
+	err = in.updateXattr()
 	return err
 }
 
-func (inode *Inode) RemoveXattr(name string) error {
-	inode.logFuse("RemoveXattr", name)
+func (in *Inode) RemoveXattr(name string) error {
+	in.logFuse("RemoveXattr", name)
 
-	inode.mu.Lock()
-	defer inode.mu.Unlock()
+	in.mu.Lock()
+	defer in.mu.Unlock()
 
-	meta, name, err := inode.getXattrMap(name, true)
+	meta, name, err := in.getXattrMap(name, true)
 	if err != nil {
 		return err
 	}
 
 	if _, ok := meta[name]; ok {
 		delete(meta, name)
-		err = inode.updateXattr()
+		err = in.updateXattr()
 		return err
 	} else {
 		return syscall.ENODATA
 	}
 }
 
-func (inode *Inode) GetXattr(name string) ([]byte, error) {
-	inode.logFuse("GetXattr", name)
+func (in *Inode) GetXattr(name string) ([]byte, error) {
+	in.logFuse("GetXattr", name)
 
-	inode.mu.Lock()
-	defer inode.mu.Unlock()
+	in.mu.Lock()
+	defer in.mu.Unlock()
 
-	meta, name, err := inode.getXattrMap(name, false)
+	meta, name, err := in.getXattrMap(name, false)
 	if err != nil {
 		return nil, err
 	}
@@ -489,27 +489,27 @@ func (inode *Inode) GetXattr(name string) ([]byte, error) {
 	}
 }
 
-func (inode *Inode) ListXattr() ([]string, error) {
-	inode.logFuse("ListXattr")
+func (in *Inode) ListXattr() ([]string, error) {
+	in.logFuse("ListXattr")
 
-	inode.mu.Lock()
-	defer inode.mu.Unlock()
+	in.mu.Lock()
+	defer in.mu.Unlock()
 
 	var xattrs []string
 
-	err := inode.fillXattr()
+	err := in.fillXattr()
 	if err != nil {
 		return nil, err
 	}
 
-	cloud, _ := inode.cloud()
+	cloud, _ := in.cloud()
 	cloudXattrPrefix := cloud.Capabilities().Name + "."
 
-	for k, _ := range inode.s3Metadata {
+	for k := range in.s3Metadata {
 		xattrs = append(xattrs, cloudXattrPrefix+k)
 	}
 
-	for k, _ := range inode.userMetadata {
+	for k := range in.userMetadata {
 		xattrs = append(xattrs, "user."+k)
 	}
 
@@ -518,14 +518,14 @@ func (inode *Inode) ListXattr() ([]string, error) {
 	return xattrs, nil
 }
 
-func (inode *Inode) OpenFile(metadata fuseops.OpContext) (fh *FileHandle, err error) {
-	inode.logFuse("OpenFile")
+func (in *Inode) OpenFile(metadata fuseops.OpContext) (fh *FileHandle, err error) {
+	in.logFuse("OpenFile")
 
-	inode.mu.Lock()
-	defer inode.mu.Unlock()
+	in.mu.Lock()
+	defer in.mu.Unlock()
 
-	fh = NewFileHandle(inode, metadata)
+	fh = NewFileHandle(in, metadata)
 
-	atomic.AddInt32(&inode.fileHandles, 1)
+	atomic.AddInt32(&in.fileHandles, 1)
 	return
 }

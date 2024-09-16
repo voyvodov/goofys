@@ -17,7 +17,6 @@ package internal
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"strings"
 	"sync"
 	"time"
@@ -53,7 +52,7 @@ type HeadBlobOutput struct {
 	Metadata    map[string]*string
 	IsDirBlob   bool
 
-	RequestId string
+	RequestID string
 }
 
 type ListBlobsInput struct {
@@ -74,7 +73,7 @@ type ListBlobsOutput struct {
 	NextContinuationToken *string
 	IsTruncated           bool
 
-	RequestId string
+	RequestID string
 }
 
 type DeleteBlobInput struct {
@@ -82,7 +81,7 @@ type DeleteBlobInput struct {
 }
 
 type DeleteBlobOutput struct {
-	RequestId string
+	RequestID string
 }
 
 type DeleteBlobsInput struct {
@@ -90,7 +89,7 @@ type DeleteBlobsInput struct {
 }
 
 type DeleteBlobsOutput struct {
-	RequestId string
+	RequestID string
 }
 
 type RenameBlobInput struct {
@@ -99,7 +98,7 @@ type RenameBlobInput struct {
 }
 
 type RenameBlobOutput struct {
-	RequestId string
+	RequestID string
 }
 
 type CopyBlobInput struct {
@@ -113,7 +112,7 @@ type CopyBlobInput struct {
 }
 
 type CopyBlobOutput struct {
-	RequestId string
+	RequestID string
 }
 
 type GetBlobInput struct {
@@ -128,7 +127,7 @@ type GetBlobOutput struct {
 
 	Body io.ReadCloser
 
-	RequestId string
+	RequestID string
 }
 
 type PutBlobInput struct {
@@ -146,7 +145,7 @@ type PutBlobOutput struct {
 	LastModified *time.Time
 	StorageClass *string
 
-	RequestId string
+	RequestID string
 }
 
 type MultipartBlobBeginInput struct {
@@ -159,7 +158,7 @@ type MultipartBlobCommitInput struct {
 	Key *string
 
 	Metadata map[string]*string
-	UploadId *string
+	UploadID *string
 	Parts    []*string
 	NumParts uint32
 
@@ -179,7 +178,7 @@ type MultipartBlobAddInput struct {
 }
 
 type MultipartBlobAddOutput struct {
-	RequestId string
+	RequestID string
 }
 
 type MultipartBlobCommitOutput struct {
@@ -187,41 +186,41 @@ type MultipartBlobCommitOutput struct {
 	LastModified *time.Time
 	StorageClass *string
 
-	RequestId string
+	RequestID string
 }
 
 type MultipartBlobAbortOutput struct {
-	RequestId string
+	RequestID string
 }
 
 type MultipartExpireInput struct {
 }
 
 type MultipartExpireOutput struct {
-	RequestId string
+	RequestID string
 }
 
 type RemoveBucketInput struct {
 }
 
 type RemoveBucketOutput struct {
-	RequestId string
+	RequestID string
 }
 
 type MakeBucketInput struct {
 }
 
 type MakeBucketOutput struct {
-	RequestId string
+	RequestID string
 }
 
-/// Implementations of all the functions here are expected to be
-/// concurrency-safe, except for
-///
-/// Init() is called exactly once before any other functions are
-/// called.
-///
-/// Capabilities()/Bucket() are expected to be const
+// StorageBackend are implementations of all the functions here are expected to be
+// / concurrency-safe, except for
+// /
+// / Init() is called exactly once before any other functions are
+// / called.
+// /
+// / Capabilities()/Bucket() are expected to be const
 type StorageBackend interface {
 	Init(key string) error
 	Capabilities() *Capabilities
@@ -337,7 +336,7 @@ type StorageBackendInitWrapper struct {
 	initErr error
 }
 
-const INIT_ERR_BLOB = "mount.err"
+const initErrBlob = "mount.err"
 
 func (s *StorageBackendInitWrapper) Init(key string) error {
 	s.init.Do(func() {
@@ -453,12 +452,12 @@ func (e StorageBackendInitError) Capabilities() *Capabilities {
 	return &e.cap
 }
 
-func (s StorageBackendInitError) Bucket() string {
+func (e StorageBackendInitError) Bucket() string {
 	return ""
 }
 
 func (e StorageBackendInitError) HeadBlob(param *HeadBlobInput) (*HeadBlobOutput, error) {
-	if param.Key == INIT_ERR_BLOB {
+	if param.Key == initErrBlob {
 		return &HeadBlobOutput{
 			BlobItemOutput: BlobItemOutput{
 				Key:          &param.Key,
@@ -478,7 +477,7 @@ func (e StorageBackendInitError) ListBlobs(param *ListBlobsInput) (*ListBlobsOut
 		return &ListBlobsOutput{
 			Items: []BlobItemOutput{
 				BlobItemOutput{
-					Key:          PString(INIT_ERR_BLOB),
+					Key:          PString(initErrBlob),
 					Size:         uint64(len(e.Error())),
 					LastModified: PTime(time.Now()),
 				},
@@ -506,7 +505,7 @@ func (e StorageBackendInitError) CopyBlob(param *CopyBlobInput) (*CopyBlobOutput
 }
 
 func (e StorageBackendInitError) GetBlob(param *GetBlobInput) (*GetBlobOutput, error) {
-	if param.Key == INIT_ERR_BLOB {
+	if param.Key == initErrBlob {
 		errStr := e.Error()
 		return &GetBlobOutput{
 			HeadBlobOutput: HeadBlobOutput{
@@ -517,7 +516,7 @@ func (e StorageBackendInitError) GetBlob(param *GetBlobInput) (*GetBlobOutput, e
 				},
 				ContentType: PString("text/plain"),
 			},
-			Body: ioutil.NopCloser(strings.NewReader(errStr)),
+			Body: io.NopCloser(strings.NewReader(errStr)),
 		}, nil
 	} else {
 		return nil, fuse.ENOENT

@@ -15,7 +15,6 @@
 package internal
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -38,9 +37,9 @@ type FileHandle struct {
 	mpuWG     sync.WaitGroup
 
 	mu              sync.Mutex
-	mpuId           *MultipartBlobCommitInput
+	mpuID           *MultipartBlobCommitInput
 	nextWriteOffset int64
-	lastPartId      uint32
+	lastPartID      uint32
 
 	poolHandle *BufferPool
 	buf        *MBuf
@@ -66,8 +65,8 @@ type FileHandle struct {
 	keepPageCache bool // the same value we returned to OpenFile
 }
 
-const MAX_READAHEAD = uint32(400 * 1024 * 1024)
-const READAHEAD_CHUNK = uint32(20 * 1024 * 1024)
+const maxReadAhead = uint32(400 * 1024 * 1024)
+const readAheadChunk = uint32(20 * 1024 * 1024)
 
 // NewFileHandle returns a new file handle for the given `inode` triggered by fuse
 // operation with the given `opMetadata`
@@ -76,7 +75,7 @@ func NewFileHandle(inode *Inode, opMetadata fuseops.OpContext) *FileHandle {
 	if err != nil {
 		log.Debugf(
 			"Failed to retrieve tgid for the given pid. pid: %v err: %v inode id: %v err: %v",
-			opMetadata.Pid, err, inode.Id, err)
+			opMetadata.Pid, err, inode.ID, err)
 	}
 	fh := &FileHandle{inode: inode, Tgid: tgid}
 	fh.cloud, fh.key = inode.cloud()
@@ -109,10 +108,8 @@ func (fh *FileHandle) initMPU() {
 	if err != nil {
 		fh.lastWriteError = mapAwsError(err)
 	} else {
-		fh.mpuId = resp
+		fh.mpuID = resp
 	}
-
-	return
 }
 
 func (fh *FileHandle) mpuPartNoSpawn(buf *MBuf, part uint32, total int64, last bool) (err error) {
@@ -122,11 +119,11 @@ func (fh *FileHandle) mpuPartNoSpawn(buf *MBuf, part uint32, total int64, last b
 	defer fs.replicators.Return(1)
 
 	if part == 0 || part > 10000 {
-		return errors.New(fmt.Sprintf("invalid part number: %v", part))
+		return fmt.Errorf("invalid part number: %v", part)
 	}
 
 	mpu := MultipartBlobAddInput{
-		Commit:     fh.mpuId,
+		Commit:     fh.mpuID,
 		PartNumber: part,
 		Body:       buf,
 		Size:       uint64(buf.Len()),
@@ -152,10 +149,10 @@ func (fh *FileHandle) mpuPart(buf *MBuf, part uint32, total int64) {
 	}()
 
 	// maybe wait for CreateMultipartUpload
-	if fh.mpuId == nil {
+	if fh.mpuID == nil {
 		fh.mpuWG.Wait()
 		// initMPU might have errored
-		if fh.mpuId == nil {
+		if fh.mpuID == nil {
 			return
 		}
 	}
@@ -169,7 +166,11 @@ func (fh *FileHandle) mpuPart(buf *MBuf, part uint32, total int64) {
 }
 
 func (fh *FileHandle) waitForCreateMPU() (err error) {
-	if fh.mpuId == nil {
+	// JOSE: does this need to be modified further??? Like when we upload sequentially does it need to still "wait"?
+	// no we dont want to even SPLIT it up into parts
+	if fh.mpuID == nil { // only enters here if mpuID = nil, else returns nothing.
+		// What will happen if we comment this if out?
+		// THe question is when does it really start the multipart upload? Like when is it assigned "CreaMultiPartUpload"
 		fh.mu.Unlock()
 		fh.initWrite()
 		fh.mpuWG.Wait() // wait for initMPU
@@ -186,11 +187,11 @@ func (fh *FileHandle) waitForCreateMPU() (err error) {
 func (fh *FileHandle) partSize() uint64 {
 	var size uint64
 
-	if fh.lastPartId < 500 {
+	if fh.lastPartID < 500 {
 		size = 5 * 1024 * 1024
-	} else if fh.lastPartId < 1000 {
+	} else if fh.lastPartID < 1000 {
 		size = 25 * 1024 * 1024
-	} else if fh.lastPartId < 2000 {
+	} else if fh.lastPartID < 2000 {
 		size = 125 * 1024 * 1024
 	} else {
 		size = 625 * 1024 * 1024
@@ -399,9 +400,8 @@ func (b *S3ReadBuffer) Read(offset uint64, p []byte) (n int, err error) {
 
 		return
 	} else {
+		err = fmt.Errorf("not the right buffer, expecting %v got %v", b.offset, offset)
 		panic(fmt.Sprintf("not the right buffer, expecting %v got %v, %v left", b.offset, offset, b.size))
-		err = errors.New(fmt.Sprintf("not the right buffer, expecting %v got %v", b.offset, offset))
-		return
 	}
 }
 
@@ -459,14 +459,14 @@ func (fh *FileHandle) readAhead(offset uint64, needAtLeast int) (err error) {
 		existingReadahead += b.size
 	}
 
-	readAheadAmount := MAX_READAHEAD
+	readAheadAmount := maxReadAhead
 
-	for readAheadAmount-existingReadahead >= READAHEAD_CHUNK {
+	for readAheadAmount-existingReadahead >= readAheadChunk {
 		off := offset + uint64(existingReadahead)
 		remaining := fh.inode.Attributes.Size - off
 
 		// only read up to readahead chunk each time
-		size := MinUInt32(readAheadAmount-existingReadahead, READAHEAD_CHUNK)
+		size := MinUInt32(readAheadAmount-existingReadahead, readAheadChunk)
 		// but don't read past the file
 		size = uint32(MinUInt64(uint64(size), remaining))
 
@@ -489,7 +489,7 @@ func (fh *FileHandle) readAhead(offset uint64, needAtLeast int) (err error) {
 			}
 		}
 
-		if size != READAHEAD_CHUNK {
+		if size != readAheadChunk {
 			// that was the last remaining chunk to readahead
 			break
 		}
@@ -576,7 +576,7 @@ func (fh *FileHandle) readFile(offset int64, buf []byte) (bytesRead int, err err
 		fh.buffers = nil
 	}
 
-	if !fs.flags.Cheap && fh.seqReadAmount >= uint64(READAHEAD_CHUNK) && fh.numOOORead < 3 {
+	if !fs.flags.Cheap && fh.seqReadAmount >= uint64(readAheadChunk) && fh.numOOORead < 3 {
 		if fh.reader != nil {
 			fh.inode.logFuse("cutover to the parallel algorithm")
 			fh.reader.Close()
@@ -754,10 +754,10 @@ func (fh *FileHandle) FlushFile() (err error) {
 
 	if fh.inode.Parent == nil {
 		// the file is deleted
-		if fh.mpuId != nil {
+		if fh.mpuID != nil {
 			go func() {
-				_, _ = fh.cloud.MultipartBlobAbort(fh.mpuId)
-				fh.mpuId = nil
+				_, _ = fh.cloud.MultipartBlobAbort(fh.mpuID)
+				fh.mpuID = nil
 			}()
 		}
 		return
@@ -768,10 +768,10 @@ func (fh *FileHandle) FlushFile() (err error) {
 	// abort mpu on error
 	defer func() {
 		if err != nil {
-			if fh.mpuId != nil {
+			if fh.mpuID != nil {
 				go func() {
-					_, _ = fh.cloud.MultipartBlobAbort(fh.mpuId)
-					fh.mpuId = nil
+					_, _ = fh.cloud.MultipartBlobAbort(fh.mpuID)
+					fh.mpuID = nil
 				}()
 			}
 
@@ -788,10 +788,10 @@ func (fh *FileHandle) FlushFile() (err error) {
 
 		fh.writeInit = sync.Once{}
 		fh.nextWriteOffset = 0
-		fh.lastPartId = 0
+		fh.lastPartID = 0
 	}()
 
-	if fh.lastPartId == 0 {
+	if fh.lastPartID == 0 {
 		return fh.flushSmallFile()
 	}
 
@@ -801,11 +801,11 @@ func (fh *FileHandle) FlushFile() (err error) {
 		return fh.lastWriteError
 	}
 
-	if fh.mpuId == nil {
+	if fh.mpuID == nil {
 		return
 	}
 
-	nParts := fh.lastPartId
+	nParts := fh.lastPartID
 	if fh.buf != nil {
 		// upload last part
 		nParts++
@@ -816,14 +816,14 @@ func (fh *FileHandle) FlushFile() (err error) {
 		fh.buf = nil
 	}
 
-	resp, err := fh.cloud.MultipartBlobCommit(fh.mpuId)
+	resp, err := fh.cloud.MultipartBlobCommit(fh.mpuID)
 	if err != nil {
 		return
 	}
 
 	fh.updateFromFlush(resp.ETag, resp.LastModified, resp.StorageClass)
 
-	fh.mpuId = nil
+	fh.mpuID = nil
 
 	// we want to get key from inode because the file could have been renamed
 	_, key := fh.inode.cloud()

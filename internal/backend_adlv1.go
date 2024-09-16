@@ -64,7 +64,7 @@ func (err ADLv1Err) Error() string {
 	return fmt.Sprintf("%v %v", err.resp.Status, err.RemoteException)
 }
 
-const ADL1_REQUEST_ID = "X-Ms-Request-Id"
+const adl1RequestID = "X-Ms-Request-Id"
 
 var adls1Log = GetLogger("adlv1")
 
@@ -80,17 +80,17 @@ func IsADLv1Endpoint(endpoint string) bool {
 func adlLogResp(level logrus.Level, r *http.Response) {
 	if adls1Log.IsLevelEnabled(level) {
 		op := r.Request.URL.Query().Get("op")
-		requestId := r.Request.Header.Get(ADL1_REQUEST_ID)
-		respId := r.Header.Get(ADL1_REQUEST_ID)
+		requestID := r.Request.Header.Get(adl1RequestID)
+		respID := r.Header.Get(adl1RequestID)
 		adls1Log.Logf(level, "%v %v %v %v %v", op, r.Request.URL.String(),
-			requestId, r.Status, respId)
+			requestID, r.Status, respID)
 	}
 }
 
 func NewADLv1(bucket string, flags *FlagStorage, config *ADLv1Config) (*ADLv1, error) {
 	parts := strings.SplitN(config.Endpoint, ".", 2)
 	if len(parts) != 2 {
-		return nil, fmt.Errorf("Invalid endpoint: %v", config.Endpoint)
+		return nil, fmt.Errorf("invalid endpoint: %v", config.Endpoint)
 	}
 
 	LogRequest := func(p autorest.Preparer) autorest.Preparer {
@@ -109,12 +109,12 @@ func NewADLv1(bucket string, flags *FlagStorage, config *ADLv1Config) (*ADLv1, e
 			}
 
 			u, _ := uuid.NewV4()
-			r.Header.Add(ADL1_REQUEST_ID, u.String())
+			r.Header.Add(adl1RequestID, u.String())
 
 			if adls1Log.IsLevelEnabled(logrus.DebugLevel) {
 				op := r.URL.Query().Get("op")
-				requestId := r.Header.Get(ADL1_REQUEST_ID)
-				adls1Log.Debugf("%v %v %v", op, r.URL.String(), requestId)
+				requestID := r.Header.Get(adl1RequestID)
+				adls1Log.Debugf("%v %v %v", op, r.URL.String(), requestID)
 			}
 
 			r, err := p.Prepare(r)
@@ -200,7 +200,7 @@ func mapADLv1Error(resp *http.Response, err error, rawError bool) error {
 				return syscall.EAGAIN
 			}
 		} else {
-			err = mapHttpError(resp.StatusCode)
+			err = mapHTTPError(resp.StatusCode)
 			if err != nil {
 				return err
 			} else {
@@ -319,7 +319,7 @@ func (b *ADLv1) appendToListResults(path string, recursive bool, startAfter stri
 				items = append(items,
 					adlv1FileStatus2BlobItem(&i, PString(key+"/")))
 
-				_, prefixes, items, err = b.appendToListResults(key,
+				_, prefixes, items, _ = b.appendToListResults(key,
 					recursive, "", maxKeys, prefixes, items)
 			} else {
 				prefixes = append(prefixes, BlobPrefixOutput{
@@ -513,13 +513,13 @@ func (b *ADLv1) MultipartBlobBegin(param *MultipartBlobBeginInput) (*MultipartBl
 	// same time.  much of these is not documented anywhere except
 	// in the SDKs:
 	// https://github.com/Azure/azure-data-lake-store-java/blob/f5c270b8cb2ac68536b2cb123d355a874cade34c/src/main/java/com/microsoft/azure/datalake/store/Core.java#L84
-	leaseId, err := uuid.NewV4()
+	leaseID, err := uuid.NewV4()
 	if err != nil {
 		return nil, err
 	}
 
 	res, err := b.client.Create(context.TODO(), b.account, b.path(param.Key),
-		&ReadSeekerCloser{bytes.NewReader([]byte(""))}, PBool(true), adl.DATA, &leaseId,
+		&ReadSeekerCloser{bytes.NewReader([]byte(""))}, PBool(true), adl.DATA, &leaseID,
 		PInt32(int32(b.flags.FileMode)))
 	err = mapADLv1Error(res.Response, err, false)
 	if err != nil {
@@ -528,20 +528,20 @@ func (b *ADLv1) MultipartBlobBegin(param *MultipartBlobBeginInput) (*MultipartBl
 
 	return &MultipartBlobCommitInput{
 		Key:         PString(b.path(param.Key)),
-		UploadId:    PString(leaseId.String()),
+		UploadID:    PString(leaseID.String()),
 		backendData: &ADLv1MultipartBlobCommitInput{},
 	}, nil
 }
 
 func (b *ADLv1) uploadPart(param *MultipartBlobAddInput, offset uint64) error {
-	leaseId, err := uuid.FromString(*param.Commit.UploadId)
+	leaseID, err := uuid.FromString(*param.Commit.UploadID)
 	if err != nil {
 		return err
 	}
 
 	res, err := b.client.Append(context.TODO(), b.account, *param.Commit.Key,
 		&ReadSeekerCloser{param.Body}, PInt64(int64(offset-param.Size)), adl.DATA,
-		&leaseId, &leaseId)
+		&leaseID, &leaseID)
 	err = mapADLv1Error(res.Response, err, true)
 	if err != nil {
 		if adlErr, ok := err.(ADLv1Err); ok {
@@ -570,13 +570,13 @@ func (b *ADLv1) uploadPart(param *MultipartBlobAddInput, offset uint64) error {
 }
 
 func (b *ADLv1) detectTransientError(param *MultipartBlobAddInput, offset uint64) error {
-	leaseId, err := uuid.FromString(*param.Commit.UploadId)
+	leaseID, err := uuid.FromString(*param.Commit.UploadID)
 	if err != nil {
 		return err
 	}
 	res, err := b.client.Append(context.TODO(), b.account, *param.Commit.Key,
 		&ReadSeekerCloser{bytes.NewReader([]byte(""))},
-		PInt64(int64(offset)), adl.CLOSE, &leaseId, &leaseId)
+		PInt64(int64(offset)), adl.CLOSE, &leaseID, &leaseID)
 	err = mapADLv1Error(res.Response, err, false)
 	return err
 }
@@ -604,12 +604,12 @@ func (b *ADLv1) MultipartBlobAdd(param *MultipartBlobAddInput) (*MultipartBlobAd
 func (b *ADLv1) MultipartBlobAbort(param *MultipartBlobCommitInput) (*MultipartBlobAbortOutput, error) {
 	// there's no such thing as abort, but at least we should release the lease
 	// which technically is more like a commit than abort
-	leaseId, err := uuid.FromString(*param.UploadId)
+	leaseID, err := uuid.FromString(*param.UploadID)
 	if err != nil {
 		return nil, err
 	}
 	res, err := b.client.Append(context.TODO(), b.account, *param.Key,
-		&ReadSeekerCloser{bytes.NewReader([]byte(""))}, nil, adl.CLOSE, &leaseId, &leaseId)
+		&ReadSeekerCloser{bytes.NewReader([]byte(""))}, nil, adl.CLOSE, &leaseID, &leaseID)
 	err = mapADLv1Error(res.Response, err, false)
 	if err != nil {
 		return nil, err
@@ -625,13 +625,13 @@ func (b *ADLv1) MultipartBlobCommit(param *MultipartBlobCommitInput) (*Multipart
 		panic("Incorrect commit data type")
 	}
 
-	leaseId, err := uuid.FromString(*param.UploadId)
+	leaseID, err := uuid.FromString(*param.UploadID)
 	if err != nil {
 		return nil, err
 	}
 	res, err := b.client.Append(context.TODO(), b.account, *param.Key,
 		&ReadSeekerCloser{bytes.NewReader([]byte(""))}, PInt64(int64(commitData.Size)),
-		adl.CLOSE, &leaseId, &leaseId)
+		adl.CLOSE, &leaseID, &leaseID)
 	err = mapADLv1Error(res.Response, err, false)
 	if err == fuse.ENOENT {
 		// either the blob was concurrently deleted or we got

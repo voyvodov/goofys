@@ -29,7 +29,7 @@ import (
 	"github.com/jacobsa/fuse"
 )
 
-// GCS variant of S3
+// GCS3 variant of S3
 type GCS3 struct {
 	*S3Backend
 }
@@ -123,7 +123,7 @@ func (s *GCS3) MultipartBlobBegin(param *MultipartBlobBeginInput) (*MultipartBlo
 	return &MultipartBlobCommitInput{
 		Key:         &param.Key,
 		Metadata:    param.Metadata,
-		UploadId:    &location,
+		UploadID:    &location,
 		Parts:       make([]*string, 10000), // at most 10K parts
 		backendData: &GCS3MultipartBlobCommitInput{},
 	}, nil
@@ -136,7 +136,7 @@ func (s *GCS3) uploadPart(param *MultipartBlobAddInput, totalSize uint64, last b
 		defer closer.Close()
 	}
 
-	// the mpuId serves as authentication token so
+	// the mpuID serves as authentication token so
 	// technically we don't need to sign this anymore and
 	// can just use a plain HTTP request, but going
 	// through aws-sdk-go anyway to get retry handling
@@ -150,7 +150,7 @@ func (s *GCS3) uploadPart(param *MultipartBlobAddInput, totalSize uint64, last b
 
 	req, resp := s.PutObjectRequest(params)
 	req.Handlers.Sign.Clear()
-	req.HTTPRequest.URL, _ = url.Parse(*param.Commit.UploadId)
+	req.HTTPRequest.URL, _ = url.Parse(*param.Commit.UploadID)
 
 	start := totalSize - param.Size
 	end := totalSize - 1

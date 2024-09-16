@@ -16,24 +16,25 @@ package internal
 
 import (
 	"errors"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 )
 
-const CGROUP_PATH = "/proc/self/cgroup"
-const CGROUP_FOLDER_PREFIX = "/sys/fs/cgroup/memory"
-const MEM_LIMIT_FILE_SUFFIX = "/memory.limit_in_bytes"
-const MEM_USAGE_FILE_SUFFIX = "/memory.usage_in_bytes"
+const (
+	cGroupPath         = "/proc/self/cgroup"
+	cGroupFolderPrefix = "/sys/fs/cgroup/memory"
+	memLimitFileSuffix = "/memory.limit_in_bytes"
+	memUsageFileSuffix = "/memory.usage_in_bytes"
+)
 
 func getCgroupAvailableMem() (retVal uint64, err error) {
 	//get the memory cgroup for self and send limit - usage for the cgroup
 
-	data, err := ioutil.ReadFile(CGROUP_PATH)
+	data, err := os.ReadFile(cGroupPath)
 	if err != nil {
-		log.Debugf("Unable to read file %s error: %s", CGROUP_PATH, err)
+		log.Debugf("Unable to read file %s error: %s", cGroupPath, err)
 		return 0, err
 	}
 
@@ -45,27 +46,27 @@ func getCgroupAvailableMem() (retVal uint64, err error) {
 
 	// newer version of docker mounts the cgroup memory limit/usage files directly under
 	// /sys/fs/cgroup/memory/ rather than /sys/fs/cgroup/memory/docker/$container_id/
-	if _, err := os.Stat(filepath.Join(CGROUP_FOLDER_PREFIX, path)); err == nil {
-		path = filepath.Join(CGROUP_FOLDER_PREFIX, path)
+	if _, err := os.Stat(filepath.Join(cGroupFolderPrefix, path)); err == nil {
+		path = filepath.Join(cGroupFolderPrefix, path)
 	} else {
-		path = filepath.Join(CGROUP_FOLDER_PREFIX)
+		path = filepath.Join(cGroupFolderPrefix)
 	}
 
 	log.Debugf("the memory cgroup path for the current process is %v", path)
 
-	mem_limit, err := readFileAndGetValue(filepath.Join(path, MEM_LIMIT_FILE_SUFFIX))
+	memLimit, err := readFileAndGetValue(filepath.Join(path, memLimitFileSuffix))
 	if err != nil {
 		log.Debugf("Unable to get memory limit from cgroup error: %v", err)
 		return 0, err
 	}
 
-	mem_usage, err := readFileAndGetValue(filepath.Join(path, MEM_USAGE_FILE_SUFFIX))
+	memUsage, err := readFileAndGetValue(filepath.Join(path, memUsageFileSuffix))
 	if err != nil {
 		log.Debugf("Unable to get memory usage from cgroup error: %v", err)
 		return 0, err
 	}
 
-	return (mem_limit - mem_usage), nil
+	return (memLimit - memUsage), nil
 }
 
 func getMemoryCgroupPath(data string) (string, error) {
@@ -96,11 +97,11 @@ func getMemoryCgroupPath(data string) (string, error) {
 		}
 	}
 
-	return "", errors.New("Unable to get memory cgroup path")
+	return "", errors.New("unable to get memory cgroup path")
 }
 
 func readFileAndGetValue(path string) (uint64, error) {
-	data, err := ioutil.ReadFile(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		log.Debugf("Unable to read file %v error: %v", path, err)
 		return 0, err
