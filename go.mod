@@ -14,11 +14,9 @@ require (
 	github.com/aws/aws-sdk-go v1.44.37
 	github.com/gofrs/uuid v4.2.0+incompatible
 	github.com/google/uuid v1.3.0
-	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/jacobsa/fuse v0.0.0-20221016084658-a4cd154343d8
+	github.com/jacobsa/fuse v0.0.0-20240909130001-a1c7c8268f12
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
 	github.com/mitchellh/go-homedir v1.1.0
-	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
 	github.com/sevlyar/go-daemon v0.1.5
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/sirupsen/logrus v1.4.3-0.20190807103436-de736cf91b92
