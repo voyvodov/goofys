@@ -118,7 +118,7 @@ func NewBackend(bucket string, flags *FlagStorage) (cloud StorageBackend, err er
 	} else if config, ok := flags.Backend.(*GCSConfig); ok {
 		cloud, err = NewGCS(bucket, config)
 	} else {
-		err = fmt.Errorf("Unknown backend config: %T", flags.Backend)
+		err = fmt.Errorf("unknown backend config: %T", flags.Backend)
 	}
 
 	return
@@ -131,7 +131,7 @@ type BucketSpec struct {
 }
 
 func ParseBucketSpec(bucket string) (spec BucketSpec, err error) {
-	if strings.Index(bucket, "://") != -1 {
+	if strings.Contains(bucket, "://") {
 		var u *url.URL
 		u, err = url.Parse(bucket)
 		if err != nil {
@@ -221,7 +221,7 @@ func newGoofys(ctx context.Context, bucket string, flags *FlagStorage,
 	fs.nextInodeID = fuseops.RootInodeID + 1
 	fs.inodes = make(map[fuseops.InodeID]*Inode)
 	root := NewInode(fs, nil, PString(""))
-	root.Id = fuseops.RootInodeID
+	root.ID = fuseops.RootInodeID
 	root.ToDir()
 	root.dir.cloud = cloud
 	root.dir.mountPrefix = prefix
@@ -303,7 +303,7 @@ func (fs *Goofys) mount(mp *Inode, b *Mount) {
 
 	name := strings.Trim(b.name, "/")
 
-	// create path for the mount. AttrTime is set to TIME_MAX so
+	// create path for the mount. AttrTime is set to timeMax so
 	// they will never expire and be removed. But DirTime is not
 	// so we will still consult the underlining cloud for listing
 	// (which will then be merged with the cached result)
@@ -323,7 +323,7 @@ func (fs *Goofys) mount(mp *Inode, b *Mount) {
 
 			dirInode = NewInode(fs, mp, &dirName)
 			dirInode.ToDir()
-			dirInode.AttrTime = TIME_MAX
+			dirInode.AttrTime = timeMax
 
 			fs.insertInode(mp, dirInode)
 			fs.mu.Unlock()
@@ -341,7 +341,7 @@ func (fs *Goofys) mount(mp *Inode, b *Mount) {
 		mountInode.ToDir()
 		mountInode.dir.cloud = b.cloud
 		mountInode.dir.mountPrefix = b.prefix
-		mountInode.AttrTime = TIME_MAX
+		mountInode.AttrTime = timeMax
 
 		fs.mu.Lock()
 		defer fs.mu.Unlock()
@@ -361,7 +361,7 @@ func (fs *Goofys) mount(mp *Inode, b *Mount) {
 		defer prev.mu.Unlock()
 		prev.dir.cloud = b.cloud
 		prev.dir.mountPrefix = b.prefix
-		prev.AttrTime = TIME_MAX
+		prev.AttrTime = timeMax
 
 	}
 	fuseLog.Infof("mounted /%v", *prev.FullName())
@@ -402,24 +402,23 @@ func (fs *Goofys) Unmount(mountPoint string) {
 		mp = dirInode
 	}
 	mp.ResetForUnmount()
-	return
 }
 
 func (fs *Goofys) StatFS(
 	ctx context.Context,
 	op *fuseops.StatFSOp) (err error) {
 
-	const BLOCK_SIZE = 4096
-	const TOTAL_SPACE = 1 * 1024 * 1024 * 1024 * 1024 * 1024 // 1PB
-	const TOTAL_BLOCKS = TOTAL_SPACE / BLOCK_SIZE
-	const INODES = 1 * 1000 * 1000 * 1000 // 1 billion
-	op.BlockSize = BLOCK_SIZE
-	op.Blocks = TOTAL_BLOCKS
-	op.BlocksFree = TOTAL_BLOCKS
-	op.BlocksAvailable = TOTAL_BLOCKS
+	const blockSize = 4096
+	const totalSpace = 1 * 1024 * 1024 * 1024 * 1024 * 1024 // 1PB
+	const totalBlocks = totalSpace / blockSize
+	const iNodes = 1 * 1000 * 1000 * 1000 // 1 billion
+	op.BlockSize = blockSize
+	op.Blocks = totalBlocks
+	op.BlocksFree = totalBlocks
+	op.BlocksAvailable = totalBlocks
 	op.IoSize = 1 * 1024 * 1024 // 1MB
-	op.Inodes = INODES
-	op.InodesFree = INODES
+	op.Inodes = iNodes
+	op.InodesFree = iNodes
 	return
 }
 
@@ -514,7 +513,7 @@ func (fs *Goofys) SetXattr(ctx context.Context,
 	return
 }
 
-func mapHttpError(status int) error {
+func mapHTTPError(status int) error {
 	switch status {
 	case 400:
 		return fuse.EINVAL
@@ -555,7 +554,7 @@ func mapAwsError(err error) error {
 
 		if reqErr, ok := err.(awserr.RequestFailure); ok {
 			// A service error occurred
-			err = mapHttpError(reqErr.StatusCode())
+			err = mapHTTPError(reqErr.StatusCode())
 			if err != nil {
 				return err
 			} else {
@@ -574,7 +573,7 @@ func mapAwsError(err error) error {
 	}
 }
 
-func (fs *Goofys) allocateInodeId() (id fuseops.InodeID) {
+func (fs *Goofys) allocateInodeID() (id fuseops.InodeID) {
 	id = fs.nextInodeID
 	fs.nextInodeID++
 	return
@@ -641,7 +640,7 @@ func (fs *Goofys) LookUpInode(
 
 				stale := inode.DeRef(1)
 				if stale {
-					delete(fs.inodes, inode.Id)
+					delete(fs.inodes, inode.ID)
 					parent.removeChild(inode)
 				}
 			}
@@ -696,7 +695,7 @@ func (fs *Goofys) LookUpInode(
 		}
 	}
 
-	op.Entry.Child = inode.Id
+	op.Entry.Child = inode.ID
 	op.Entry.Attributes = inode.InflateAttributes()
 	op.Entry.AttributesExpiration = time.Now().Add(fs.flags.StatCacheTTL)
 	op.Entry.EntryExpiration = time.Now().Add(fs.flags.TypeCacheTTL)
@@ -709,22 +708,22 @@ func (fs *Goofys) LookUpInode(
 func (fs *Goofys) insertInode(parent *Inode, inode *Inode) {
 	addInode := false
 	if *inode.Name == "." {
-		inode.Id = parent.Id
+		inode.ID = parent.ID
 	} else if *inode.Name == ".." {
-		inode.Id = fuseops.InodeID(fuseops.RootInodeID)
+		inode.ID = fuseops.InodeID(fuseops.RootInodeID)
 		if parent.Parent != nil {
-			inode.Id = parent.Parent.Id
+			inode.ID = parent.Parent.ID
 		}
 	} else {
-		if inode.Id != 0 {
-			panic(fmt.Sprintf("inode id is set: %v %v", *inode.Name, inode.Id))
+		if inode.ID != 0 {
+			panic(fmt.Sprintf("inode id is set: %v %v", *inode.Name, inode.ID))
 		}
-		inode.Id = fs.allocateInodeId()
+		inode.ID = fs.allocateInodeID()
 		addInode = true
 	}
 	parent.insertChildUnlocked(inode)
 	if addInode {
-		fs.inodes[inode.Id] = inode
+		fs.inodes[inode.ID] = inode
 
 		// if we are inserting a new directory, also create
 		// the child . and ..
@@ -737,12 +736,12 @@ func (fs *Goofys) insertInode(parent *Inode, inode *Inode) {
 func (fs *Goofys) addDotAndDotDot(dir *Inode) {
 	dot := NewInode(fs, dir, PString("."))
 	dot.ToDir()
-	dot.AttrTime = TIME_MAX
+	dot.AttrTime = timeMax
 	fs.insertInode(dir, dot)
 
 	dot = NewInode(fs, dir, PString(".."))
 	dot.ToDir()
-	dot.AttrTime = TIME_MAX
+	dot.AttrTime = timeMax
 	fs.insertInode(dir, dot)
 }
 
@@ -992,7 +991,7 @@ func (fs *Goofys) ReleaseFileHandle(
 	fh := fs.fileHandles[op.Handle]
 	fh.Release()
 
-	fuseLog.Debugln("ReleaseFileHandle", *fh.inode.FullName(), op.Handle, fh.inode.Id)
+	fuseLog.Debugln("ReleaseFileHandle", *fh.inode.FullName(), op.Handle, fh.inode.ID)
 
 	delete(fs.fileHandles, op.Handle)
 
@@ -1019,7 +1018,7 @@ func (fs *Goofys) CreateFile(
 
 	parent.mu.Unlock()
 
-	op.Entry.Child = inode.Id
+	op.Entry.Child = inode.ID
 	op.Entry.Attributes = inode.InflateAttributes()
 	op.Entry.AttributesExpiration = time.Now().Add(fs.flags.StatCacheTTL)
 	op.Entry.EntryExpiration = time.Now().Add(fs.flags.TypeCacheTTL)
@@ -1059,7 +1058,7 @@ func (fs *Goofys) MkDir(
 
 	parent.mu.Unlock()
 
-	op.Entry.Child = inode.Id
+	op.Entry.Child = inode.ID
 	op.Entry.Attributes = inode.InflateAttributes()
 	op.Entry.AttributesExpiration = time.Now().Add(fs.flags.StatCacheTTL)
 	op.Entry.EntryExpiration = time.Now().Add(fs.flags.TypeCacheTTL)

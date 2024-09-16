@@ -17,7 +17,6 @@ package internal
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 	"sync"
 	"time"
 
@@ -98,7 +97,7 @@ func CompareReader(r1, r2 io.Reader, bufSize int) (int, error) {
 			return -1, err2
 		}
 
-		if bytes.Compare(buf1[:], buf2[:]) != 0 {
+		if !bytes.Equal(buf1[:], buf2[:]) {
 			// fallback to slow path to find the exact point of divergent
 			for i, b := range buf1 {
 				if buf2[i] != b {
@@ -127,7 +126,7 @@ func CompareReader(r1, r2 io.Reader, bufSize int) (int, error) {
 func (s *BufferTest) TestMBuf(t *C) {
 	h := NewBufferPool(1000 * 1024 * 1024)
 
-	n := uint64(2 * BUF_SIZE)
+	n := uint64(2 * bufSize)
 	mb := MBuf{}.Init(h, n, false)
 	t.Assert(len(mb.buffers), Equals, 2)
 
@@ -141,14 +140,14 @@ func (s *BufferTest) TestMBuf(t *C) {
 		}
 	}
 	t.Assert(mb.wbuf, Equals, 1)
-	t.Assert(mb.wp, Equals, BUF_SIZE)
+	t.Assert(mb.wp, Equals, bufSize)
 
 	diff, err := CompareReader(mb, io.LimitReader(&SeqReader{}, int64(n)), 0)
 	t.Assert(err, IsNil)
 	t.Assert(diff, Equals, -1)
 
 	t.Assert(mb.rbuf, Equals, 1)
-	t.Assert(mb.rp, Equals, BUF_SIZE)
+	t.Assert(mb.rp, Equals, bufSize)
 
 	t.Assert(h.numBuffers, Equals, uint64(2))
 	mb.Free()
@@ -158,7 +157,7 @@ func (s *BufferTest) TestMBuf(t *C) {
 func (s *BufferTest) TestBufferWrite(t *C) {
 	h := NewBufferPool(1000 * 1024 * 1024)
 
-	n := uint64(2 * BUF_SIZE)
+	n := uint64(2 * bufSize)
 	mb := MBuf{}.Init(h, n, true)
 	t.Assert(len(mb.buffers), Equals, 2)
 
@@ -192,7 +191,7 @@ func (s *BufferTest) TestBufferWrite(t *C) {
 func (s *BufferTest) TestBufferLen(t *C) {
 	h := NewBufferPool(1000 * 1024 * 1024)
 
-	n := uint64(2*BUF_SIZE - 1)
+	n := uint64(2*bufSize - 1)
 	mb := MBuf{}.Init(h, n, true)
 	t.Assert(len(mb.buffers), Equals, 2)
 
@@ -205,7 +204,7 @@ func (s *BufferTest) TestBufferLen(t *C) {
 func (s *BufferTest) TestBuffer(t *C) {
 	h := NewBufferPool(1000 * 1024 * 1024)
 
-	n := uint64(2 * BUF_SIZE)
+	n := uint64(2 * bufSize)
 	mb := MBuf{}.Init(h, n, false)
 	t.Assert(len(mb.buffers), Equals, 2)
 
@@ -248,7 +247,7 @@ func (s *BufferTest) TestBufferTiny(t *C) {
 	t.Assert(len(mb.buffers), Equals, 1)
 
 	r := func() (io.ReadCloser, error) {
-		return ioutil.NopCloser(&OneByteReader{}), nil
+		return io.NopCloser(&OneByteReader{}), nil
 	}
 
 	b := Buffer{}.Init(mb, r)
@@ -290,7 +289,7 @@ func (s *BufferTest) TestPool(t *C) {
 func (s *BufferTest) TestIssue193(t *C) {
 	h := NewBufferPool(1000 * 1024 * 1024)
 
-	n := uint64(2 * BUF_SIZE)
+	n := uint64(2 * bufSize)
 	mb := MBuf{}.Init(h, n, false)
 
 	r := func() (io.ReadCloser, error) {
@@ -305,7 +304,7 @@ func (s *BufferTest) TestIssue193(t *C) {
 
 func (s *BufferTest) TestCGroupMemory(t *C) {
 	//test getMemoryCgroupPath()
-	test_input := `11:hugetlb:/
+	testInput := `11:hugetlb:/
                     10:memory:/user.slice
                     9:cpuset:/
                     8:blkio:/user.slice
@@ -316,6 +315,6 @@ func (s *BufferTest) TestCGroupMemory(t *C) {
                     3:freezer:/
                     2:pids:/
                     1:name=systemd:/user.slice/user-1000.slice/session-1759.scope`
-	mem_path, _ := getMemoryCgroupPath(test_input)
-	t.Assert(mem_path, Equals, "/user.slice")
+	memPath, _ := getMemoryCgroupPath(testInput)
+	t.Assert(memPath, Equals, "/user.slice")
 }

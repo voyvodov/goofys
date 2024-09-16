@@ -32,7 +32,7 @@ type S3Config struct {
 	AccessKey       string
 	SecretKey       string
 	RoleArn         string
-	RoleExternalId  string
+	RoleExternalID  string
 	RoleSessionName string
 	StsEndpoint     string
 
@@ -109,8 +109,8 @@ func (c *S3Config) ToAwsConfig(flags *FlagStorage) (*aws.Config, error) {
 	if c.RoleArn != "" {
 		c.Credentials = stscreds.NewCredentials(stsConfigProvider{c}, c.RoleArn,
 			func(p *stscreds.AssumeRoleProvider) {
-				if c.RoleExternalId != "" {
-					p.ExternalID = &c.RoleExternalId
+				if c.RoleExternalID != "" {
+					p.ExternalID = &c.RoleExternalID
 				}
 				p.RoleSessionName = c.RoleSessionName
 			})

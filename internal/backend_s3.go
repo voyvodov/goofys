@@ -36,6 +36,10 @@ import (
 	"github.com/jacobsa/fuse"
 )
 
+const (
+	copyLimit = uint64(5 * 1024 * 1024 * 1024)
+)
+
 type S3Backend struct {
 	*s3.S3
 	cap Capabilities
@@ -184,8 +188,8 @@ func (s *S3Backend) detectBucketLocationByHEAD() (err error, isAws bool) {
 	}
 
 	switch resp.StatusCode {
-	case 200:
-		// note that this only happen if the bucket is in us-east-1
+	case 200, 301:
+		//Both are valid, since AWS is sending 301 in case of bucket in path
 		if len(s.config.Profile) == 0 {
 			s.awsConfig.Credentials = credentials.AnonymousCredentials
 			s3Log.Infof("anonymous bucket detected")
@@ -291,7 +295,7 @@ func (s *S3Backend) ListObjectsV2(params *s3.ListObjectsV2Input) (*s3.ListObject
 		if err != nil {
 			return nil, "", err
 		}
-		return resp, s.getRequestId(req), nil
+		return resp, s.getRequestID(req), nil
 	} else {
 		v1 := s3.ListObjectsInput{
 			Bucket:       params.Bucket,
@@ -349,7 +353,7 @@ func metadataToLower(m map[string]*string) map[string]*string {
 	return m
 }
 
-func (s *S3Backend) getRequestId(r *request.Request) string {
+func (s *S3Backend) getRequestID(r *request.Request) string {
 	return r.HTTPResponse.Header.Get("x-amz-request-id") + ": " +
 		r.HTTPResponse.Header.Get("x-amz-id-2")
 }
@@ -380,7 +384,7 @@ func (s *S3Backend) HeadBlob(param *HeadBlobInput) (*HeadBlobOutput, error) {
 		ContentType: resp.ContentType,
 		Metadata:    metadataToLower(resp.Metadata),
 		IsDirBlob:   strings.HasSuffix(param.Key, "/"),
-		RequestId:   s.getRequestId(req),
+		RequestID:   s.getRequestID(req),
 	}, nil
 }
 
@@ -391,7 +395,7 @@ func (s *S3Backend) ListBlobs(param *ListBlobsInput) (*ListBlobsOutput, error) {
 		maxKeys = aws.Int64(int64(*param.MaxKeys))
 	}
 
-	resp, reqId, err := s.ListObjectsV2(&s3.ListObjectsV2Input{
+	resp, reqID, err := s.ListObjectsV2(&s3.ListObjectsV2Input{
 		Bucket:            &s.bucket,
 		Prefix:            param.Prefix,
 		Delimiter:         param.Delimiter,
@@ -424,7 +428,7 @@ func (s *S3Backend) ListBlobs(param *ListBlobsInput) (*ListBlobsOutput, error) {
 		Items:                 items,
 		NextContinuationToken: resp.NextContinuationToken,
 		IsTruncated:           *resp.IsTruncated,
-		RequestId:             reqId,
+		RequestID:             reqID,
 	}, nil
 }
 
@@ -437,16 +441,16 @@ func (s *S3Backend) DeleteBlob(param *DeleteBlobInput) (*DeleteBlobOutput, error
 	if err != nil {
 		return nil, mapAwsError(err)
 	}
-	return &DeleteBlobOutput{s.getRequestId(req)}, nil
+	return &DeleteBlobOutput{s.getRequestID(req)}, nil
 }
 
 func (s *S3Backend) DeleteBlobs(param *DeleteBlobsInput) (*DeleteBlobsOutput, error) {
-	num_objs := len(param.Items)
+	numObjs := len(param.Items)
 
 	var items s3.Delete
-	var objs = make([]*s3.ObjectIdentifier, num_objs)
+	var objs = make([]*s3.ObjectIdentifier, numObjs)
 
-	for i, _ := range param.Items {
+	for i := range param.Items {
 		objs[i] = &s3.ObjectIdentifier{Key: &param.Items[i]}
 	}
 
@@ -462,14 +466,14 @@ func (s *S3Backend) DeleteBlobs(param *DeleteBlobsInput) (*DeleteBlobsOutput, er
 		return nil, mapAwsError(err)
 	}
 
-	return &DeleteBlobsOutput{s.getRequestId(req)}, nil
+	return &DeleteBlobsOutput{s.getRequestID(req)}, nil
 }
 
 func (s *S3Backend) RenameBlob(param *RenameBlobInput) (*RenameBlobOutput, error) {
 	return nil, syscall.ENOTSUP
 }
 
-func (s *S3Backend) mpuCopyPart(from string, to string, mpuId string, bytes string, part int64,
+func (s *S3Backend) mpuCopyPart(from string, to string, mpuID string, bytes string, part int64,
 	sem semaphore, srcEtag *string, etag **string, errout *error) {
 
 	defer sem.P(1)
@@ -480,7 +484,7 @@ func (s *S3Backend) mpuCopyPart(from string, to string, mpuId string, bytes stri
 		Bucket:            &s.bucket,
 		Key:               &to,
 		CopySource:        aws.String(url.QueryEscape(from)),
-		UploadId:          &mpuId,
+		UploadId:          &mpuID,
 		CopySourceRange:   &bytes,
 		CopySourceIfMatch: srcEtag,
 		PartNumber:        &part,
@@ -504,20 +508,19 @@ func (s *S3Backend) mpuCopyPart(from string, to string, mpuId string, bytes stri
 	}
 
 	*etag = resp.CopyPartResult.ETag
-	return
 }
 
-func sizeToParts(size int64) (int, int64) {
-	const MAX_S3_MPU_SIZE int64 = 5 * 1024 * 1024 * 1024 * 1024
-	if size > MAX_S3_MPU_SIZE {
-		panic(fmt.Sprintf("object size: %v exceeds maximum S3 MPU size: %v", size, MAX_S3_MPU_SIZE))
+func sizeToParts(size int64) (int, int64) { // this shouldnt matter, since this mpu shouldnt get called.
+	const maxS3MPUSize int64 = 5 * 1024 * 1024 * 1024 * 1024
+	if size > maxS3MPUSize {
+		panic(fmt.Sprintf("object size: %v exceeds maximum S3 MPU size: %v", size, maxS3MPUSize))
 	}
 
 	// Use the maximum number of parts to allow the most server-side copy
 	// parallelism.
-	const MAX_PARTS = 10 * 1000
-	const MIN_PART_SIZE = 50 * 1024 * 1024
-	partSize := MaxInt64(size/(MAX_PARTS-1), MIN_PART_SIZE)
+	const maxParts = 10 * 1000
+	const minPartSize = 50 * 1024 * 1024
+	partSize := MaxInt64(size/(maxParts-1), minPartSize)
 
 	nParts := int(size / partSize)
 	if size%partSize != 0 {
@@ -527,15 +530,15 @@ func sizeToParts(size int64) (int, int64) {
 	return nParts, partSize
 }
 
-func (s *S3Backend) mpuCopyParts(size int64, from string, to string, mpuId string,
+func (s *S3Backend) mpuCopyParts(size int64, from string, to string, mpuID string,
 	srcEtag *string, etags []*string, partSize int64, err *error) {
 
 	rangeFrom := int64(0)
 	rangeTo := int64(0)
 
-	MAX_CONCURRENCY := MinInt(100, len(etags))
-	sem := make(semaphore, MAX_CONCURRENCY)
-	sem.P(MAX_CONCURRENCY)
+	maxConcurrency := MinInt(100, len(etags))
+	sem := make(semaphore, maxConcurrency)
+	sem.P(maxConcurrency)
 
 	for i := int64(1); rangeTo < size; i++ {
 		rangeFrom = rangeTo
@@ -546,19 +549,21 @@ func (s *S3Backend) mpuCopyParts(size int64, from string, to string, mpuId strin
 		bytes := fmt.Sprintf("bytes=%v-%v", rangeFrom, rangeTo-1)
 
 		sem.V(1)
-		go s.mpuCopyPart(from, to, mpuId, bytes, i, sem, srcEtag, &etags[i-1], err)
+		go s.mpuCopyPart(from, to, mpuID, bytes, i, sem, srcEtag, &etags[i-1], err)
 	}
 
-	sem.V(MAX_CONCURRENCY)
+	sem.V(maxConcurrency)
 }
 
-func (s *S3Backend) copyObjectMultipart(size int64, from string, to string, mpuId string,
-	srcEtag *string, metadata map[string]*string, storageClass *string) (requestId string, err error) {
-	nParts, partSize := sizeToParts(size)
+// This shouldnt get reached, the only reference to `copyObjectMultip` was commented out (other than the test)
+// Assuming that this backend_s3.go is the one that is used.
+func (s *S3Backend) copyObjectMultipart(size int64, from string, to string, mpuID string,
+	srcEtag *string, metadata map[string]*string, storageClass *string) (requestID string, err error) {
+	nParts, partSize := sizeToParts(size) // should be unreachable, and partsize i dont need anything to do with
 	etags := make([]*string, nParts)
 
-	if mpuId == "" {
-		params := &s3.CreateMultipartUploadInput{
+	if mpuID == "" {
+		params := &s3.CreateMultipartUploadInput{ // should be unreachable, assuming this is the one that is used
 			Bucket:       &s.bucket,
 			Key:          &to,
 			StorageClass: storageClass,
@@ -586,10 +591,10 @@ func (s *S3Backend) copyObjectMultipart(size int64, from string, to string, mpuI
 			return "", mapAwsError(err)
 		}
 
-		mpuId = *resp.UploadId
+		mpuID = *resp.UploadId
 	}
 
-	s.mpuCopyParts(size, from, to, mpuId, srcEtag, etags, partSize, &err)
+	s.mpuCopyParts(size, from, to, mpuID, srcEtag, etags, partSize, &err)
 
 	if err != nil {
 		return
@@ -605,7 +610,7 @@ func (s *S3Backend) copyObjectMultipart(size int64, from string, to string, mpuI
 		params := &s3.CompleteMultipartUploadInput{
 			Bucket:   &s.bucket,
 			Key:      &to,
-			UploadId: &mpuId,
+			UploadId: &mpuID,
 			MultipartUpload: &s3.CompletedMultipartUpload{
 				Parts: parts,
 			},
@@ -619,7 +624,7 @@ func (s *S3Backend) copyObjectMultipart(size int64, from string, to string, mpuI
 			s3Log.Errorf("Complete MPU %v = %v", params, err)
 			err = mapAwsError(err)
 		} else {
-			requestId = s.getRequestId(req)
+			requestID = s.getRequestID(req)
 		}
 	}
 
@@ -632,9 +637,7 @@ func (s *S3Backend) CopyBlob(param *CopyBlobInput) (*CopyBlobOutput, error) {
 		metadataDirective = s3.MetadataDirectiveReplace
 	}
 
-	COPY_LIMIT := uint64(5 * 1024 * 1024 * 1024)
-
-	if param.Size == nil || param.ETag == nil || (*param.Size > COPY_LIMIT &&
+	if param.Size == nil || param.ETag == nil || (*param.Size > copyLimit &&
 		(param.Metadata == nil || param.StorageClass == nil)) {
 
 		params := &HeadBlobInput{Key: param.Source}
@@ -662,12 +665,12 @@ func (s *S3Backend) CopyBlob(param *CopyBlobInput) (*CopyBlobOutput, error) {
 	from := s.bucket + "/" + param.Source
 
 	/*
-		if !s.gcs && *param.Size > COPY_LIMIT {
-			reqId, err := s.copyObjectMultipart(int64(*param.Size), from, param.Destination, "", param.ETag, param.Metadata, param.StorageClass)
+		if !s.gcs && *param.Size > copyLimit {
+			reqID, err := s.copyObjectMultipart(int64(*param.Size), from, param.Destination, "", param.ETag, param.Metadata, param.StorageClass)
 			if err != nil {
 				return nil, err
 			}
-			return &CopyBlobOutput{reqId}, nil
+			return &CopyBlobOutput{reqID}, nil
 		}
 	*/
 
@@ -714,7 +717,7 @@ func (s *S3Backend) CopyBlob(param *CopyBlobInput) (*CopyBlobOutput, error) {
 		return nil, mapAwsError(err)
 	}
 
-	return &CopyBlobOutput{s.getRequestId(req)}, nil
+	return &CopyBlobOutput{s.getRequestID(req)}, nil
 }
 
 func (s *S3Backend) GetBlob(param *GetBlobInput) (*GetBlobOutput, error) {
@@ -759,7 +762,7 @@ func (s *S3Backend) GetBlob(param *GetBlobInput) (*GetBlobOutput, error) {
 			Metadata:    metadataToLower(resp.Metadata),
 		},
 		Body:      resp.Body,
-		RequestId: s.getRequestId(req),
+		RequestID: s.getRequestID(req),
 	}, nil
 }
 
@@ -816,10 +819,11 @@ func (s *S3Backend) PutBlob(param *PutBlobInput) (*PutBlobOutput, error) {
 		ETag:         resp.ETag,
 		LastModified: getDate(req.HTTPResponse),
 		StorageClass: &storageClass,
-		RequestId:    s.getRequestId(req),
+		RequestID:    s.getRequestID(req),
 	}, nil
 }
 
+// MultipartBlobBegin reached from file.go
 func (s *S3Backend) MultipartBlobBegin(param *MultipartBlobBeginInput) (*MultipartBlobCommitInput, error) {
 	mpu := s3.CreateMultipartUploadInput{
 		Bucket:       &s.bucket,
@@ -852,7 +856,7 @@ func (s *S3Backend) MultipartBlobBegin(param *MultipartBlobBeginInput) (*Multipa
 	return &MultipartBlobCommitInput{
 		Key:      &param.Key,
 		Metadata: metadataToLower(param.Metadata),
-		UploadId: resp.UploadId,
+		UploadID: resp.UploadId,
 		Parts:    make([]*string, 10000), // at most 10K parts
 	}, nil
 }
@@ -865,7 +869,7 @@ func (s *S3Backend) MultipartBlobAdd(param *MultipartBlobAddInput) (*MultipartBl
 		Bucket:     &s.bucket,
 		Key:        param.Commit.Key,
 		PartNumber: aws.Int64(int64(param.PartNumber)),
-		UploadId:   param.Commit.UploadId,
+		UploadId:   param.Commit.UploadID,
 		Body:       param.Body,
 	}
 	if s.config.SseC != "" {
@@ -886,7 +890,7 @@ func (s *S3Backend) MultipartBlobAdd(param *MultipartBlobAddInput) (*MultipartBl
 	}
 	*en = resp.ETag
 
-	return &MultipartBlobAddOutput{s.getRequestId(req)}, nil
+	return &MultipartBlobAddOutput{s.getRequestID(req)}, nil
 }
 
 func (s *S3Backend) MultipartBlobCommit(param *MultipartBlobCommitInput) (*MultipartBlobCommitOutput, error) {
@@ -901,7 +905,7 @@ func (s *S3Backend) MultipartBlobCommit(param *MultipartBlobCommitInput) (*Multi
 	mpu := s3.CompleteMultipartUploadInput{
 		Bucket:   &s.bucket,
 		Key:      param.Key,
-		UploadId: param.UploadId,
+		UploadId: param.UploadID,
 		MultipartUpload: &s3.CompletedMultipartUpload{
 			Parts: parts,
 		},
@@ -920,7 +924,7 @@ func (s *S3Backend) MultipartBlobCommit(param *MultipartBlobCommitInput) (*Multi
 	return &MultipartBlobCommitOutput{
 		ETag:         resp.ETag,
 		LastModified: getDate(req.HTTPResponse),
-		RequestId:    s.getRequestId(req),
+		RequestID:    s.getRequestID(req),
 	}, nil
 }
 
@@ -928,14 +932,14 @@ func (s *S3Backend) MultipartBlobAbort(param *MultipartBlobCommitInput) (*Multip
 	mpu := s3.AbortMultipartUploadInput{
 		Bucket:   &s.bucket,
 		Key:      param.Key,
-		UploadId: param.UploadId,
+		UploadId: param.UploadID,
 	}
 	req, _ := s.AbortMultipartUploadRequest(&mpu)
 	err := req.Send()
 	if err != nil {
 		return nil, mapAwsError(err)
 	}
-	return &MultipartBlobAbortOutput{s.getRequestId(req)}, nil
+	return &MultipartBlobAbortOutput{s.getRequestID(req)}, nil
 }
 
 func (s *S3Backend) MultipartExpire(param *MultipartExpireInput) (*MultipartExpireOutput, error) {
@@ -1003,16 +1007,16 @@ func (s *S3Backend) MakeBucket(param *MakeBucketInput) (*MakeBucketOutput, error
 		for i := 0; i < 10; i++ {
 			_, err = s.PutBucketTagging(&param)
 			err = mapAwsError((err))
-			switch err {
-			case nil:
+			if err == nil {
 				break
-			case syscall.ENXIO, syscall.EINTR:
+			}
+			if err == syscall.ENXIO || err == syscall.EINTR {
 				s3Log.Infof("waiting for bucket")
 				time.Sleep((time.Duration(i) + 1) * 2 * time.Second)
-			default:
-				s3Log.Errorf("Failed to tag bucket %v: %v", s.bucket, err)
-				return nil, err
+				continue
 			}
+			s3Log.Errorf("Failed to tag bucket %v: %v", s.bucket, err)
+			return nil, err
 		}
 	}
 

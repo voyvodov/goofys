@@ -1,0 +1,37 @@
+networks:
+  goofys-tests:
+    driver: bridge
+
+services:
+  minio:
+    image: bitnami/minio:2024.9.13
+    ports:
+      - 9001:9001
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    networks:
+      - goofys-tests
+
+  tests:
+    image: goofys-ci
+    build: 
+      context: ./goofys-ci
+      args:
+        GO_VERSION: 1.21.7
+    
+    cap_add:
+      - SYS_ADMIN
+    devices:
+      - /dev/fuse
+    volumes:
+      - ../:/code
+    environment:
+      TEST_ENDPOINT_URL: http://minio:9000
+    depends_on:
+      - minio
+    links:
+      - minio
+    networks:
+      - goofys-tests
+    command: bash -c "cd /code/; ./test/run-tests.sh"

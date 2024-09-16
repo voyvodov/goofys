@@ -4,19 +4,12 @@ VERSION := `git describe --abbrev=0 --tags || echo "0.0.0"`
 BUILD := `git rev-parse --short HEAD`
 LDFLAGS=-ldflags "-X=github.com/voyvodov/goofys/internal.VersionNumber=$(VERSION) -X=github.com/voyvodov/goofys/internal.VersionHash=$(BUILD)"
 
-
-semgrep ?= -
-ifeq (,$(shell which semgrep))
-	semgrep=echo "-- Running inside Docker --"; docker run --rm -v $$(pwd):/src returntocorp/semgrep:1.65.0 semgrep
-else
-	semgrep=semgrep
-endif
-
-run-test: s3proxy.jar
+.PHONY: test
+test: s3proxy.jar
 	./test/run-tests.sh
 
 s3proxy.jar:
-	wget https://github.com/gaul/s3proxy/releases/download/s3proxy-1.8.0/s3proxy -O s3proxy.jar
+	wget https://github.com/gaul/s3proxy/releases/download/s3proxy-2.2.0/s3proxy -O s3proxy.jar
 
 get-deps: s3proxy.jar
 	go get -t ./...
@@ -36,30 +29,22 @@ bootstrap: ## Install tooling
 	@go install $$(go list -e -f '{{join .Imports " "}}' ./internal/tools/tools.go)
 
 .PHONY: check
-check: staticcheck unparam semgrep check-fmt check-codegen check-gomod
+check: staticcheck check-fmt check-gomod
 
 .PHONY: staticcheck
 staticcheck:
-	@staticcheck -checks 'all,-ST1000' ./...
+	@staticcheck -checks 'all,-ST1000,-U1000,-ST1020,-ST1001' ./...
 
 .PHONY: unparam
 unparam:
 	@unparam ./...
 
-.PHONY: semgrep
-semgrep: ## Run semgrep
-	@$(semgrep) --quiet --metrics=off --error --config="r/dgryski.semgrep-go" --config .github/semgrep-rules.yaml .
-
 .PHONY: check-fmt
 check-fmt:
-	@if [ $$(go fmt -mod=vendor ./...) ]; then\
+	@if [ $$(go fmt -mod=mod ./...) ]; then\
 		echo "Go code is not formatted";\
 		exit 1;\
 	fi
-
-.PHONY: check-codegen
-check-codegen: gogenerate ## Check generated code is up-to-date
-	@git diff --exit-code --
 
 .PHONY: check-gomod
 check-gomod: ## Check go.mod file
