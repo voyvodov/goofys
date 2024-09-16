@@ -46,6 +46,12 @@ func (fs FusePanicLogger) StatFS(ctx context.Context, op *fuseops.StatFSOp) (err
 	defer LogPanic(&err)
 	return fs.Fs.StatFS(ctx, op)
 }
+
+// SyncFS implements fuseutil.FileSystem.
+func (fs FusePanicLogger) SyncFS(ctx context.Context, op *fuseops.SyncFSOp) (err error) {
+	defer LogPanic(&err)
+	return fs.Fs.SyncFS(ctx, op)
+}
 func (fs FusePanicLogger) LookUpInode(ctx context.Context, op *fuseops.LookUpInodeOp) (err error) {
 	defer LogPanic(&err)
 	return fs.Fs.LookUpInode(ctx, op)
