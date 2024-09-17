@@ -31,18 +31,13 @@ trap cleanup EXIT
 if [ $CLOUD == "s3" ]; then
     mkdir -p /tmp/s3proxy
 
-    AWS_PROFILE=${AWS:-}
-    if [ "$AWS_PROFILE" == "" ]; then
-	: ${LOG_LEVEL:="warn"}
-	export LOG_LEVEL
 	if [ "$MOUNT" != "false" ]; then
 	    PROXY_BIN="java -jar s3proxy.jar --properties test/s3proxy-fs.properties"
 	else
 	    PROXY_BIN="java -Xmx4g -jar s3proxy.jar --properties test/s3proxy.properties"
 	fi
-    else
-	export MINIO
-    fi
+
+	export MINIO=true
 elif [ $CLOUD == "azblob" ]; then
     : ${AZURE_STORAGE_ACCOUNT:="devstoreaccount1"}
     : ${AZURE_STORAGE_KEY:="Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="}
@@ -84,5 +79,6 @@ fi
 export CLOUD
 
 # run test in `go test` local mode so streaming output works
-(cd internal; go test -v -timeout $TIMEOUT -check.vv $T)
+(cd internal; go test --failfast -v -check.v GoofysTest.TestBackendListPrefix)
+(cd internal; go test --failfast -v -timeout $TIMEOUT -check.v $T)
 exit $?

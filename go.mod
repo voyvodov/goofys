@@ -11,7 +11,7 @@ require (
 	github.com/Azure/go-autorest/autorest/adal v0.9.23
 	github.com/Azure/go-autorest/autorest/azure/auth v0.5.12
 	github.com/Azure/go-autorest/autorest/azure/cli v0.4.6
-	github.com/aws/aws-sdk-go v1.44.278
+	github.com/aws/aws-sdk-go v1.55.5
 	github.com/gofrs/uuid v4.2.0+incompatible
 	github.com/google/uuid v1.3.0
 	github.com/jacobsa/fuse v0.0.0-20240909130001-a1c7c8268f12
