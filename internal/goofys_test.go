@@ -484,7 +484,7 @@ func (s *GoofysTest) SetUpTest(t *C) {
 	cloud := os.Getenv("CLOUD")
 
 	if cloud == "s3" {
-		s.emulator = !hasEnv("AWS")
+		s.emulator = !hasEnv("AWS") && !hasEnv("MINIO")
 		s.waitForEmulator(t)
 
 		conf := s.selectTestConfig(t, flags)
