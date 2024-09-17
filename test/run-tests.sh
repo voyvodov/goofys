@@ -41,7 +41,7 @@ if [ $CLOUD == "s3" ]; then
 	    PROXY_BIN="java -Xmx4g -jar s3proxy.jar --properties test/s3proxy.properties"
 	fi
     else
-	export AWS
+	export MINIO
     fi
 elif [ $CLOUD == "azblob" ]; then
     : ${AZURE_STORAGE_ACCOUNT:="devstoreaccount1"}
