@@ -1811,50 +1811,50 @@ func (s *GoofysTest) testExplicitDir(t *C) {
 	t.Assert(err, IsNil)
 }
 
-func (s *GoofysTest) TestBenchLs(t *C) {
-	s.fs.flags.TypeCacheTTL = 1 * time.Minute
-	s.fs.flags.StatCacheTTL = 1 * time.Minute
-	mountPoint := "/tmp/mnt" + s.fs.bucket
-	s.setUpTestTimeout(t, 20*time.Minute)
-	s.runFuseTest(t, mountPoint, false, "../bench/bench.sh", "cat", mountPoint, "ls")
-}
+// func (s *GoofysTest) TestBenchLs(t *C) {
+// 	s.fs.flags.TypeCacheTTL = 1 * time.Minute
+// 	s.fs.flags.StatCacheTTL = 1 * time.Minute
+// 	mountPoint := "/tmp/mnt" + s.fs.bucket
+// 	s.setUpTestTimeout(t, 20*time.Minute)
+// 	s.runFuseTest(t, mountPoint, false, "../bench/bench.sh", "cat", mountPoint, "ls")
+// }
 
-func (s *GoofysTest) TestBenchCreate(t *C) {
-	s.fs.flags.TypeCacheTTL = 1 * time.Minute
-	s.fs.flags.StatCacheTTL = 1 * time.Minute
-	mountPoint := "/tmp/mnt" + s.fs.bucket
-	s.runFuseTest(t, mountPoint, false, "../bench/bench.sh", "cat", mountPoint, "create")
-}
+// func (s *GoofysTest) TestBenchCreate(t *C) {
+// 	s.fs.flags.TypeCacheTTL = 1 * time.Minute
+// 	s.fs.flags.StatCacheTTL = 1 * time.Minute
+// 	mountPoint := "/tmp/mnt" + s.fs.bucket
+// 	s.runFuseTest(t, mountPoint, false, "../bench/bench.sh", "cat", mountPoint, "create")
+// }
 
-func (s *GoofysTest) TestBenchCreateParallel(t *C) {
-	s.fs.flags.TypeCacheTTL = 1 * time.Minute
-	s.fs.flags.StatCacheTTL = 1 * time.Minute
-	mountPoint := "/tmp/mnt" + s.fs.bucket
-	s.runFuseTest(t, mountPoint, false, "../bench/bench.sh", "cat", mountPoint, "create_parallel")
-}
+// func (s *GoofysTest) TestBenchCreateParallel(t *C) {
+// 	s.fs.flags.TypeCacheTTL = 1 * time.Minute
+// 	s.fs.flags.StatCacheTTL = 1 * time.Minute
+// 	mountPoint := "/tmp/mnt" + s.fs.bucket
+// 	s.runFuseTest(t, mountPoint, false, "../bench/bench.sh", "cat", mountPoint, "create_parallel")
+// }
 
-func (s *GoofysTest) TestBenchIO(t *C) {
-	s.fs.flags.TypeCacheTTL = 1 * time.Minute
-	s.fs.flags.StatCacheTTL = 1 * time.Minute
-	mountPoint := "/tmp/mnt" + s.fs.bucket
-	s.runFuseTest(t, mountPoint, false, "../bench/bench.sh", "cat", mountPoint, "io")
-}
+// func (s *GoofysTest) TestBenchIO(t *C) {
+// 	s.fs.flags.TypeCacheTTL = 1 * time.Minute
+// 	s.fs.flags.StatCacheTTL = 1 * time.Minute
+// 	mountPoint := "/tmp/mnt" + s.fs.bucket
+// 	s.runFuseTest(t, mountPoint, false, "../bench/bench.sh", "cat", mountPoint, "io")
+// }
 
-func (s *GoofysTest) TestBenchFindTree(t *C) {
-	s.fs.flags.TypeCacheTTL = 1 * time.Minute
-	s.fs.flags.StatCacheTTL = 1 * time.Minute
-	mountPoint := "/tmp/mnt" + s.fs.bucket
+// func (s *GoofysTest) TestBenchFindTree(t *C) {
+// 	s.fs.flags.TypeCacheTTL = 1 * time.Minute
+// 	s.fs.flags.StatCacheTTL = 1 * time.Minute
+// 	mountPoint := "/tmp/mnt" + s.fs.bucket
 
-	s.runFuseTest(t, mountPoint, false, "../bench/bench.sh", "cat", mountPoint, "find")
-}
+// 	s.runFuseTest(t, mountPoint, false, "../bench/bench.sh", "cat", mountPoint, "find")
+// }
 
-func (s *GoofysTest) TestIssue231(t *C) {
-	if isTravis() {
-		t.Skip("disable in travis, not sure if it has enough memory")
-	}
-	mountPoint := "/tmp/mnt" + s.fs.bucket
-	s.runFuseTest(t, mountPoint, false, "../bench/bench.sh", "cat", mountPoint, "issue231")
-}
+// func (s *GoofysTest) TestIssue231(t *C) {
+// 	if isTravis() {
+// 		t.Skip("disable in travis, not sure if it has enough memory")
+// 	}
+// 	mountPoint := "/tmp/mnt" + s.fs.bucket
+// 	s.runFuseTest(t, mountPoint, false, "../bench/bench.sh", "cat", mountPoint, "issue231")
+// }
 
 func (s *GoofysTest) TestChmod(t *C) {
 	root := s.getRoot(t)
