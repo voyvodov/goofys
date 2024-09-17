@@ -39,7 +39,7 @@ func (s *AwsTest) SetUpSuite(t *C) {
 }
 
 func (s *AwsTest) TestRegionDetection(t *C) {
-	s.s3.bucket = "goofys-eu-west-1.StatCan.xyz"
+	s.s3.bucket = "goofys-eu-west-1.kahing.xyz"
 
 	err, isAws := s.s3.detectBucketLocationByHEAD()
 	t.Assert(err, IsNil)

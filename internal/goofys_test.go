@@ -237,9 +237,9 @@ func (s *GoofysTest) selectTestConfig(t *C, flags *FlagStorage) (conf S3Config) 
 		flags.Endpoint = "http://storage.googleapis.com"
 	} else if hasEnv("MINIO") {
 		conf.Region = "us-east-1"
-		conf.AccessKey = "Q3AM3UQ867SPQQA43P2F"
-		conf.SecretKey = "zuf+tfteSlswRu7BJ86wekitnifILbZam1KYY3TG"
-		flags.Endpoint = "https://play.minio.io:9000"
+		conf.AccessKey = "minioadmin"
+		conf.SecretKey = "minioadmin"
+		flags.Endpoint = os.Getenv("TEST_ENDPOINT_URL")
 	} else {
 		s.emulator = true
 
