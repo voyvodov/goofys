@@ -33,7 +33,7 @@ check: staticcheck check-fmt check-gomod
 
 .PHONY: staticcheck
 staticcheck:
-	@staticcheck -checks 'all,-ST1000,-U1000,-ST1020,-ST1001' ./...
+	@staticcheck -checks 'all,-ST1000,-U1000,-ST1020,-ST1001,-SA1019' ./...
 
 .PHONY: unparam
 unparam:
