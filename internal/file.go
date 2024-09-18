@@ -217,8 +217,8 @@ func (fh *FileHandle) uploadCurrentBuf(parallel bool) (err error) {
 		return
 	}
 
-	fh.lastPartId++
-	part := fh.lastPartId
+	fh.lastPartID++
+	part := fh.lastPartID
 	buf := fh.buf
 	fh.buf = nil
 
