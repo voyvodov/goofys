@@ -16,6 +16,7 @@ package internal
 
 import (
 	. "github.com/voyvodov/goofys/api/common"
+	"github.com/voyvodov/goofys/internal/metrics"
 
 	"context"
 	"fmt"
@@ -53,6 +54,8 @@ type Goofys struct {
 	bucket string
 
 	flags *FlagStorage
+
+	mCollector *metrics.GoofysMetrics
 
 	umask uint32
 
@@ -200,6 +203,9 @@ func newGoofys(ctx context.Context, bucket string, flags *FlagStorage,
 	if flags.DebugS3 {
 		s3Log.Level = logrus.DebugLevel
 	}
+
+	fs.mCollector = metrics.NewGoofysMetrics()
+	fs.mCollector.Start(flags.MetricsAddr)
 
 	cloud, err := newBackend(bucket, flags)
 	if err != nil {

@@ -56,6 +56,9 @@ type FlagStorage struct {
 	TypeCacheTTL           time.Duration
 	HTTPTimeout            time.Duration
 
+	// Metrics
+	MetricsAddr string
+
 	// Debugging
 	DebugFuse  bool
 	DebugS3    bool

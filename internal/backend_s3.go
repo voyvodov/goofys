@@ -16,6 +16,7 @@ package internal
 
 import (
 	. "github.com/voyvodov/goofys/api/common"
+	"github.com/voyvodov/goofys/internal/metrics"
 
 	"fmt"
 	"net/http"
@@ -143,6 +144,30 @@ func (s *S3Backend) newS3() {
 		Name: "UserAgentHandler",
 		Fn:   request.MakeAddToUserAgentHandler("goofys", VersionNumber+"-"+VersionHash),
 	})
+
+	s.S3.Handlers.Complete.PushBack(func(r *request.Request) {
+		metrics.GoofysRequestsTotal.WithLabelValues(
+			r.Operation.Name, "s3", func() string {
+				if r.Error != nil {
+					return "error"
+				}
+				return "success"
+			}(),
+		).Inc()
+	})
+
+	s.S3.Handlers.Complete.PushBack(func(r *request.Request) {
+		duration := time.Since(r.Time).Seconds()
+		metrics.GoofysRequestDuration.WithLabelValues(
+			r.Operation.Name, "s3", func() string {
+				if r.Error != nil {
+					return "error"
+				}
+				return "success"
+			}(),
+		).Observe(duration)
+	})
+
 }
 
 func (s *S3Backend) detectBucketLocationByHEAD() (err error, isAws bool) {

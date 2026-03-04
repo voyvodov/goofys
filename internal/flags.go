@@ -139,6 +139,16 @@ func NewApp() (app *cli.App) {
 			},
 
 			/////////////////////////
+			// Metrics
+			/////////////////////////
+
+			cli.StringFlag{
+				Name:  "metrics-addr",
+				Usage: "Address to bind metrics server to.",
+				Value: "127.0.0.1:10060",
+			},
+
+			/////////////////////////
 			// S3
 			/////////////////////////
 
@@ -355,6 +365,9 @@ func PopulateFlags(c *cli.Context) (ret *FlagStorage) {
 		StatCacheTTL:           c.Duration("stat-cache-ttl"),
 		TypeCacheTTL:           c.Duration("type-cache-ttl"),
 		HTTPTimeout:            c.Duration("http-timeout"),
+
+		// Metrics
+		MetricsAddr: c.String("metrics-addr"),
 
 		// Common Backend Config
 		Endpoint:       c.String("endpoint"),
