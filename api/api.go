@@ -1,6 +1,10 @@
 package goofys
 
 import (
+	"net/http"
+	"net/http/pprof"
+	_ "net/http/pprof"
+
 	. "github.com/voyvodov/goofys/api/common"
 	"github.com/voyvodov/goofys/internal"
 
@@ -42,6 +46,10 @@ func Mount(
 		mountCfg.DebugLogger = GetStdLogger(fuseLog, logrus.DebugLevel)
 	} else {
 		GetLogger("fuse").Level = logrus.InfoLevel
+	}
+
+	if flags.PProfAddr != "" {
+		startPprof(flags.PProfAddr)
 	}
 
 	if flags.Backend == nil {
@@ -184,6 +192,25 @@ func Mount(
 	}
 
 	return
+}
+
+func startPprof(addr string) {
+	log.Infof("Starting pprof server on %s", addr)
+
+	mux := http.NewServeMux()
+
+	mux.HandleFunc("/debug/pprof/", pprof.Index)
+	mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+	go func() {
+		err := http.ListenAndServe(addr, mux)
+		if err != nil {
+			log.Errorf("pprof server error: %v", err)
+		}
+	}()
 }
 
 // expose Goofys related functions and types for extending and mounting elsewhere

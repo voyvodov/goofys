@@ -276,6 +276,11 @@ func NewApp() (app *cli.App) {
 			},
 
 			cli.StringFlag{
+				Name:  "pprof-addr",
+				Usage: "Start a pprof server on this address (ex: localhost:6060)",
+			},
+
+			cli.StringFlag{
 				Name:  "pid-file",
 				Usage: "Write a pid file containing the process pid. Does nothing if -f is used.",
 			},
@@ -299,7 +304,7 @@ func NewApp() (app *cli.App) {
 		flagCategories[f] = "tuning"
 	}
 
-	for _, f := range []string{"help, h", "debug_fuse", "debug_s3", "version, v", "f"} {
+	for _, f := range []string{"help, h", "debug_fuse", "debug_s3", "version, v", "f", "pprof-addr"} {
 		flagCategories[f] = "misc"
 	}
 
@@ -364,6 +369,7 @@ func PopulateFlags(c *cli.Context) (ret *FlagStorage) {
 		DebugFuse:  c.Bool("debug_fuse"),
 		DebugS3:    c.Bool("debug_s3"),
 		Foreground: c.Bool("f"),
+		PProfAddr:  c.String("pprof-addr"),
 	}
 
 	// S3
