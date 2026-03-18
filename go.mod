@@ -1,6 +1,6 @@
 module github.com/voyvodov/goofys
 
-go 1.21
+go 1.25.8
 
 require (
 	cloud.google.com/go/storage v1.30.1
@@ -14,7 +14,7 @@ require (
 	github.com/aws/aws-sdk-go v1.55.5
 	github.com/gofrs/uuid v4.2.0+incompatible
 	github.com/google/uuid v1.3.0
-	github.com/jacobsa/fuse v0.0.0-20240909130001-a1c7c8268f12
+	github.com/jacobsa/fuse v0.0.0-20260302145937-f1ba38d60fdf
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
@@ -22,14 +22,14 @@ require (
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/sirupsen/logrus v1.8.1
 	github.com/urfave/cli v1.21.1-0.20190807111034-521735b7608a
-	go.uber.org/mock v0.4.0
+	go.uber.org/mock v0.6.0
 	golang.org/x/oauth2 v0.10.0
-	golang.org/x/sync v0.7.0
-	golang.org/x/sys v0.20.0
+	golang.org/x/sync v0.19.0
+	golang.org/x/sys v0.42.0
 	google.golang.org/api v0.126.0
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c
 	gopkg.in/ini.v1 v1.51.0
-	honnef.co/go/tools v0.4.7
+	honnef.co/go/tools v0.7.0
 )
 
 require (
@@ -65,11 +65,11 @@ require (
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/yusufpapurcu/wmi v1.2.4 // indirect
 	go.opencensus.io v0.24.0 // indirect
-	golang.org/x/crypto v0.23.0 // indirect
-	golang.org/x/mod v0.17.0 // indirect
-	golang.org/x/net v0.25.0 // indirect
-	golang.org/x/text v0.15.0 // indirect
-	golang.org/x/tools v0.21.1-0.20240531212143-b6235391adb3 // indirect
+	golang.org/x/crypto v0.46.0 // indirect
+	golang.org/x/mod v0.31.0 // indirect
+	golang.org/x/net v0.48.0 // indirect
+	golang.org/x/text v0.32.0 // indirect
+	golang.org/x/tools v0.40.1-0.20260108161641-ca281cf95054 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20230711160842-782d3b101e98 // indirect
@@ -81,6 +81,6 @@ require (
 
 require (
 	github.com/smartystreets/goconvey v1.8.1 // indirect
-	golang.org/x/exp/typeparams v0.0.0-20221208152030-732eee02a75a // indirect
+	golang.org/x/exp/typeparams v0.0.0-20231108232855-2478ac86f678 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
