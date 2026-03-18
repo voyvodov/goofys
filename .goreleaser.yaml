@@ -1,9 +1,11 @@
+version: 2
+
 before:
   hooks:
     - make get-deps
     - make build
 builds:
-  -
+  - builder: go
     binary: goofys
     ldflags: -s -w -X=github.com/voyvodov/goofys/internal.VersionNumber={{.Tag}} -X=github.com/voyvodov/goofys/internal.VersionHash={{ .ShortCommit }}
     env:
@@ -15,12 +17,6 @@ builds:
 
 archives:
   - name_template: '{{ .ProjectName }}_{{ .Version }}_{{ .Os }}-{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}'
-    replacements:
-      darwin: macOS
-      linux: Linux
-      windows: Windows
-      386: 32bit
-      amd64: 64bit
 
 checksum:
   name_template: '{{ .ProjectName }}_checksums.txt'
@@ -33,6 +29,11 @@ changelog:
       - '^test:'
       - Merge pull request
       - Merge branch
+
+sboms:
+  - artifacts: archive
+  - id: source # Two different sbom configurations need two different IDs
+    artifacts: source
 
 nfpms:
   -

@@ -112,6 +112,10 @@ func (fs FusePanicLogger) ReadDir(ctx context.Context, op *fuseops.ReadDirOp) (e
 	defer LogPanic(&err)
 	return fs.Fs.ReadDir(ctx, op)
 }
+func (fs FusePanicLogger) ReadDirPlus(ctx context.Context, op *fuseops.ReadDirPlusOp) (err error) {
+	defer LogPanic(&err)
+	return fs.Fs.ReadDirPlus(ctx, op)
+}
 func (fs FusePanicLogger) ReleaseDirHandle(ctx context.Context, op *fuseops.ReleaseDirHandleOp) (err error) {
 	defer LogPanic(&err)
 	return fs.Fs.ReleaseDirHandle(ctx, op)
