@@ -756,8 +756,13 @@ func (fs *Goofys) ForgetInode(
 	op *fuseops.ForgetInodeOp) (err error) {
 
 	fs.mu.RLock()
-	inode := fs.getInodeOrDie(op.Inode)
+	// we don't use getInodeOrDie here because it's possible that the kernel sends forget for an inode that is not found, just ignore it
+	inode, ok := fs.inodes[op.Inode]
 	fs.mu.RUnlock()
+
+	if !ok || inode == nil {
+		return
+	}
 
 	if inode.Parent != nil {
 		inode.Parent.mu.Lock()
