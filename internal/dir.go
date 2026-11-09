@@ -604,13 +604,13 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 	}
 
 	in.mu.Lock()
-	defer in.mu.Unlock()
 
 	// Find the first non-stale child inode with offset >=
 	// `offset`. A stale inode is one that existed before the
 	// first ListBlobs for this dir handle, but is not being
 	// written to (ie: not a new file)
 	var child *Inode
+	var removedInodes []*Inode
 	for int(offset) < len(in.dir.Children) {
 		// Note on locking: See comments at Inode::AttrTime, Inode::Parent.
 		childTmp := in.dir.Children[offset]
@@ -621,6 +621,7 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 			// So this is a stale entry that should be removed.
 			childTmp.Parent = nil
 			in.removeChildUnlocked(childTmp)
+			removedInodes = append(removedInodes, childTmp)
 		} else {
 			// Found a non-stale child inode.
 			child = childTmp
@@ -632,23 +633,37 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 		// we've reached the end
 		in.dir.DirTime = time.Now()
 		in.Attributes.Mtime = in.findChildMaxTime()
-		return nil, nil
 	}
 
-	en = &DirHandleEntry{
-		Name:   *child.Name,
-		Inode:  child.ID,
-		Offset: fuseops.DirOffset(offset) + 1,
-	}
-	if child.isDir() {
-		en.Type = fuseutil.DT_Directory
-	} else {
-		en.Type = fuseutil.DT_File
+	if child != nil {
+		en = &DirHandleEntry{
+			Name:   *child.Name,
+			Inode:  child.ID,
+			Offset: fuseops.DirOffset(offset) + 1,
+		}
+		if child.isDir() {
+			en.Type = fuseutil.DT_Directory
+		} else {
+			en.Type = fuseutil.DT_File
+		}
+
+		if dh.lastFromCloud != nil && en.Name == *dh.lastFromCloud {
+			dh.lastFromCloud = nil
+		}
 	}
 
-	if dh.lastFromCloud != nil && en.Name == *dh.lastFromCloud {
-		dh.lastFromCloud = nil
+	in.mu.Unlock()
+
+	for _, removed := range removedInodes {
+		fs.mu.RLock()
+		unreferenced := removed.refcnt == 0
+		fs.mu.RUnlock()
+
+		if unreferenced {
+			fs.removeInodeFromMap(removed)
+		}
 	}
+
 	return en, nil
 }
 
@@ -935,12 +950,22 @@ func (in *Inode) Unlink(name string) (err error) {
 	}
 
 	in.mu.Lock()
-	defer in.mu.Unlock()
-
 	inode := in.findChildUnlocked(name)
 	if inode != nil {
 		in.removeChildUnlocked(inode)
 		inode.Parent = nil
+	}
+	in.mu.Unlock()
+
+	if inode != nil {
+		fs := in.fs
+		fs.mu.RLock()
+		unreferenced := inode.refcnt == 0
+		fs.mu.RUnlock()
+
+		if unreferenced {
+			fs.removeInodeFromMap(inode)
+		}
 	}
 
 	return
@@ -1071,12 +1096,22 @@ func (in *Inode) RmDir(name string) (err error) {
 
 	// we know this entry is gone
 	in.mu.Lock()
-	defer in.mu.Unlock()
-
 	inode := in.findChildUnlocked(name)
 	if inode != nil {
 		in.removeChildUnlocked(inode)
 		inode.Parent = nil
+	}
+	in.mu.Unlock()
+
+	if inode != nil {
+		fs := in.fs
+		fs.mu.RLock()
+		unreferenced := inode.refcnt == 0
+		fs.mu.RUnlock()
+
+		if unreferenced {
+			fs.removeInodeFromMap(inode)
+		}
 	}
 
 	return
