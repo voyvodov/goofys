@@ -5,4 +5,5 @@ xout
 s3proxy.jar
 /s3proxy.sh
 /mnt
+/.tools/
 /dist/**
