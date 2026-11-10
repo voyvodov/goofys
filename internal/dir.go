@@ -244,6 +244,17 @@ func (dh *DirHandle) listObjectsSlurp(prefix string) (resp *ListBlobsOutput, err
 		return
 	}
 
+	// Subtree insertion releases locks while moving between directories. Pause
+	// eviction until insertion and directory-cache sealing have both finished.
+	inode.fs.mu.Lock()
+	inode.fs.activeSlurps++
+	inode.fs.mu.Unlock()
+	defer func() {
+		inode.fs.mu.Lock()
+		inode.fs.activeSlurps--
+		inode.fs.mu.Unlock()
+	}()
+
 	inode.mu.Lock()
 	inode.fs.mu.Lock()
 
@@ -536,6 +547,7 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 
 			if inode := in.findChildUnlocked(dirName); inode != nil {
 				now := time.Now()
+				inode.lastUsed = now
 				// don't want to update time if this
 				// inode is setup to never expire
 				if inode.AttrTime.Before(now) {
@@ -578,6 +590,7 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 					inode.refcnt = 0
 					fs.insertInode(in, inode)
 				}
+				inode.lastUsed = time.Now()
 				inode.SetFromBlobItem(&obj)
 			} else {
 				// this is a slurped up object which
@@ -619,8 +632,10 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 			// childTmp.AttrTime < dh.refreshStartTime => the child entry was not
 			// updated from cloud by this dir Handle.
 			// So this is a stale entry that should be removed.
+			fs.mu.Lock()
 			childTmp.Parent = nil
 			in.removeChildUnlocked(childTmp)
+			fs.mu.Unlock()
 			removedInodes = append(removedInodes, childTmp)
 		} else {
 			// Found a non-stale child inode.
@@ -636,6 +651,9 @@ func (dh *DirHandle) ReadDir(offset fuseops.DirOffset) (en *DirHandleEntry, err 
 	}
 
 	if child != nil {
+		fs.mu.Lock()
+		child.lastUsed = time.Now()
+		fs.mu.Unlock()
 		en = &DirHandleEntry{
 			Name:   *child.Name,
 			Inode:  child.ID,
@@ -952,8 +970,10 @@ func (in *Inode) Unlink(name string) (err error) {
 	in.mu.Lock()
 	inode := in.findChildUnlocked(name)
 	if inode != nil {
+		in.fs.mu.Lock()
 		in.removeChildUnlocked(inode)
 		inode.Parent = nil
+		in.fs.mu.Unlock()
 	}
 	in.mu.Unlock()
 
@@ -1098,8 +1118,10 @@ func (in *Inode) RmDir(name string) (err error) {
 	in.mu.Lock()
 	inode := in.findChildUnlocked(name)
 	if inode != nil {
+		in.fs.mu.Lock()
 		in.removeChildUnlocked(inode)
 		inode.Parent = nil
+		in.fs.mu.Unlock()
 	}
 	in.mu.Unlock()
 
@@ -1247,6 +1269,7 @@ func sealPastDirs(dirs map[*Inode]bool, d *Inode) {
 // LOCKS_REQUIRED(in.fs.mu)
 func (in *Inode) insertSubTree(path string, obj *BlobItemOutput, dirs map[*Inode]bool) {
 	fs := in.fs
+	in.lastUsed = time.Now()
 	slash := strings.Index(path, "/")
 	if slash == -1 {
 		inode := in.findChildUnlocked(path)
@@ -1262,6 +1285,7 @@ func (in *Inode) insertSubTree(path string, obj *BlobItemOutput, dirs map[*Inode
 			// new inode we don't care about that
 			// violation because no one else will take
 			// that lock anyway
+			inode.lastUsed = time.Now()
 			fs.mu.Unlock()
 			in.mu.Unlock()
 			inode.SetFromBlobItem(obj)
@@ -1285,6 +1309,7 @@ func (in *Inode) insertSubTree(path string, obj *BlobItemOutput, dirs map[*Inode
 				inode.ToDir()
 				fs.addDotAndDotDot(inode)
 			} else {
+				inode.lastUsed = time.Now()
 				fs.mu.Unlock()
 				in.mu.Unlock()
 				inode.SetFromBlobItem(obj)
@@ -1305,6 +1330,7 @@ func (in *Inode) insertSubTree(path string, obj *BlobItemOutput, dirs map[*Inode
 				fs.addDotAndDotDot(inode)
 			}
 			now := time.Now()
+			inode.lastUsed = now
 			if inode.AttrTime.Before(now) {
 				inode.AttrTime = now
 			}
@@ -1356,6 +1382,9 @@ func (in *Inode) readDirFromCache(offset fuseops.DirOffset) (en *DirHandleEntry,
 			return
 		}
 		child := in.dir.Children[offset]
+		in.fs.mu.Lock()
+		child.lastUsed = time.Now()
+		in.fs.mu.Unlock()
 
 		en = &DirHandleEntry{
 			Name:   *child.Name,

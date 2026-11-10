@@ -350,6 +350,9 @@ func (s *GoofysTest) deleteBucket(cloud StorageBackend) error {
 }
 
 func (s *GoofysTest) TearDownTest(t *C) {
+	if s.fs != nil {
+		s.fs.Destroy()
+	}
 	close(s.timeout)
 	s.timeout = nil
 

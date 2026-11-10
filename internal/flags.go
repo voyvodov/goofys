@@ -255,6 +255,11 @@ func NewApp() (app *cli.App) {
 				Value: 30 * time.Second,
 				Usage: "Set the timeout on HTTP requests to S3",
 			},
+			cli.DurationFlag{
+				Name:  "inode-cache-ttl",
+				Value: 30 * time.Minute,
+				Usage: "Evict unreferenced cached inodes after this idle time (0 disables eviction)",
+			},
 
 			/////////////////////////
 			// Debugging
@@ -300,7 +305,7 @@ func NewApp() (app *cli.App) {
 
 	for _, f := range []string{"cheap", "block-read-cache",
 		"block-read-cache-size", "block-read-cache-mem-ratio", "no-implicit-dir",
-		"stat-cache-ttl", "type-cache-ttl", "http-timeout"} {
+		"stat-cache-ttl", "type-cache-ttl", "inode-cache-ttl", "http-timeout"} {
 		flagCategories[f] = "tuning"
 	}
 
@@ -359,6 +364,7 @@ func PopulateFlags(c *cli.Context) (ret *FlagStorage) {
 		ExplicitDir:            c.Bool("no-implicit-dir"),
 		StatCacheTTL:           c.Duration("stat-cache-ttl"),
 		TypeCacheTTL:           c.Duration("type-cache-ttl"),
+		InodeCacheTTL:          c.Duration("inode-cache-ttl"),
 		HTTPTimeout:            c.Duration("http-timeout"),
 
 		// Common Backend Config

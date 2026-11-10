@@ -63,6 +63,26 @@ See also: [Instruction for Azure Blob Storage, Azure Data Lake Gen1, and Azure D
 
 Got more questions? Check out [questions other people asked](https://github.com/voyvodov/goofys/issues?utf8=%E2%9C%93&q=is%3Aissue%20label%3Aquestion%20)
 
+# Inode cache eviction
+
+By default, goofys checks once a minute for unreferenced cached inodes
+that have been idle for five minutes. Set `--inode-cache-ttl` to change
+the idle timeout, or use `--inode-cache-ttl 0` to disable eviction.
+This timeout is independent of `--stat-cache-ttl` and `--type-cache-ttl`.
+
+Eviction removes cached files and empty directories without deleting
+objects from storage. Later lookups reload objects that still exist and
+return a missing-file error for objects deleted outside goofys. Referenced
+inodes, open files, and directories being listed are protected. An active
+directory listing also protects its children to preserve listing offsets.
+Busy entries are retried on later sweeps, so the timeout is not a strict
+memory limit. Referenced inodes remain until the kernel releases them.
+
+Applications using `NewGoofys` directly can enable eviction through
+`FlagStorage.InodeCacheTTL` and must call `Destroy` when finished. The FUSE
+server calls `Destroy` on unmount; canceling the constructor context also
+stops the eviction worker.
+
 # Benchmark
 
 Using `--stat-cache-ttl 1s --type-cache-ttl 1s` for goofys
