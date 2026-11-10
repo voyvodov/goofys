@@ -414,7 +414,6 @@ func (b *S3ReadBuffer) Read(offset uint64, p []byte) (n int, err error) {
 
 		return
 	} else {
-		err = fmt.Errorf("not the right buffer, expecting %v got %v", b.offset, offset)
 		panic(fmt.Sprintf("not the right buffer, expecting %v got %v, %v left", b.offset, offset, b.size))
 	}
 }

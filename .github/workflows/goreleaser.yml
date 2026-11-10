@@ -16,7 +16,7 @@ jobs:
         name: Set up Go
         uses: actions/setup-go@v2
         with:
-          go-version: '1.25.8'
+          go-version: '1.27.3'
 
       - name: Setup syft
         uses: anchore/sbom-action/download-syft@17ae1740179002c89186b61233e0f892c3118b11 # v0.23.0

@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"context"
 	"testing"
 
 	. "github.com/voyvodov/goofys/api/common"
@@ -94,7 +95,7 @@ func (s *InodeCleanupTest) TestForgetRetainsReferencedChildren(t *C) {
 	t.Assert(fs.inodes[fileCID], NotNil)
 
 	// Forget dirA (simulates kernel ForgetInode)
-	err := fs.ForgetInode(nil, &fuseops.ForgetInodeOp{Inode: dirAID, N: 1})
+	err := fs.ForgetInode(context.Background(), &fuseops.ForgetInodeOp{Inode: dirAID, N: 1})
 	t.Assert(err, IsNil)
 
 	// dirA should be gone
@@ -121,7 +122,7 @@ func (s *InodeCleanupTest) TestForgetCleansUnreferencedSubtree(t *C) {
 	dirBID := dirB.ID
 	fileCID := fileC.ID
 
-	err := fs.ForgetInode(nil, &fuseops.ForgetInodeOp{Inode: dirAID, N: 1})
+	err := fs.ForgetInode(context.Background(), &fuseops.ForgetInodeOp{Inode: dirAID, N: 1})
 	t.Assert(err, IsNil)
 
 	// All three should be gone
@@ -148,7 +149,7 @@ func (s *InodeCleanupTest) TestForgetRetainsMixedRefcntTree(t *C) {
 	dirCID := dirC.ID
 	fileDID := fileD.ID
 
-	err := fs.ForgetInode(nil, &fuseops.ForgetInodeOp{Inode: dirAID, N: 1})
+	err := fs.ForgetInode(context.Background(), &fuseops.ForgetInodeOp{Inode: dirAID, N: 1})
 	t.Assert(err, IsNil)
 
 	t.Assert(fs.inodes[dirAID], IsNil)
@@ -169,7 +170,7 @@ func (s *InodeCleanupTest) TestRetainedChildStillLookupable(t *C) {
 
 	dirBID := dirB.ID
 
-	err := fs.ForgetInode(nil, &fuseops.ForgetInodeOp{Inode: dirA.ID, N: 1})
+	err := fs.ForgetInode(context.Background(), &fuseops.ForgetInodeOp{Inode: dirA.ID, N: 1})
 	t.Assert(err, IsNil)
 
 	// dirB is retained — getInodeOrDie must not panic

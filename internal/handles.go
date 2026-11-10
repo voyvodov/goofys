@@ -337,11 +337,6 @@ func (in *Inode) fillXattrFromHead(resp *HeadBlobOutput) {
 func (in *Inode) fillXattr() (err error) {
 	if !in.ImplicitDir && in.userMetadata == nil {
 
-		fullName := *in.FullName()
-		if in.isDir() {
-			fullName += "/"
-		}
-
 		cloud, key := in.cloud()
 		params := &HeadBlobInput{Key: key}
 		resp, err := cloud.HeadBlob(params)
