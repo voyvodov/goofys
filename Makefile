@@ -12,14 +12,11 @@ BUILD := `git rev-parse --short HEAD`
 LDFLAGS=-ldflags "-X=github.com/voyvodov/goofys/internal.VersionNumber=$(VERSION) -X=github.com/voyvodov/goofys/internal.VersionHash=$(BUILD)"
 
 .PHONY: test
-test: s3proxy.jar
+test:
 	./test/run-tests.sh
 
-s3proxy.jar:
-	wget https://github.com/gaul/s3proxy/releases/download/s3proxy-2.2.0/s3proxy -O s3proxy.jar
-
-get-deps: s3proxy.jar
-	go get -t ./...
+get-deps:
+	go mod download
 
 build:
 	go build ${LDFLAGS}

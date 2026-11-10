@@ -22,27 +22,25 @@ RUN make build
 FROM alpine:3.20.3
 
 # Install necessary runtime dependencies
-RUN apk update && apk upgrade && apk --no-cache add ca-certificates bash wget
-
-# Download MinIO client (mc)
-RUN wget https://dl.min.io/client/mc/release/linux-amd64/mc -O /usr/bin/mc && \
-    chmod +x /usr/bin/mc && \
-    apk del wget && rm -rf /var/cache/apk/*
+RUN apk update && apk upgrade && apk --no-cache add ca-certificates bash aws-cli
 
 # Copy the test file
 COPY <<EOF /test.txt
-This is a test file for minio
+This is a test file for RustFS
 EOF
 
-# Copy and configure MinIO
-COPY <<EOF /configure_minio.sh
+# Populate a local RustFS test bucket.
+COPY <<'EOF' /configure_rustfs.sh
 #!/bin/bash
-set -eux
-/usr/bin/mc alias set k8s-minio-dev http://localhost:9000 minioadmin minioadmin
-/usr/bin/mc mb k8s-minio-dev/test-bucket
-/usr/bin/mc cp /test.txt k8s-minio-dev/test-bucket
+set -eu
+export AWS_ACCESS_KEY_ID="${RUSTFS_ACCESS_KEY:-rustfsadmin}"
+export AWS_SECRET_ACCESS_KEY="${RUSTFS_SECRET_KEY:-rustfsadmin}"
+export AWS_DEFAULT_REGION=us-east-1
+endpoint="${TEST_ENDPOINT_URL:-http://localhost:9000}"
+aws --endpoint-url "$endpoint" s3 mb s3://test-bucket
+aws --endpoint-url "$endpoint" s3 cp /test.txt s3://test-bucket/
 EOF
-RUN chmod +x /configure_minio.sh
+RUN chmod +x /configure_rustfs.sh
 
 # Get goofys build from the build stage
 COPY --from=goofys-builder /goofys/goofys .

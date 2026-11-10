@@ -1,9 +1,9 @@
-FROM ubuntu:20.04
+FROM ubuntu:24.04
 
-ARG GO_VERSION=1.20.7
+ARG GO_VERSION=1.27.3
 
 RUN apt-get update \
-    && apt-get install -y curl openjdk-17-jre fuse3 python \
+    && apt-get install -y ca-certificates curl fuse3 python3 \
     && curl -sSL https://golang.org/dl/go${GO_VERSION}.linux-amd64.tar.gz | \
     tar -C /usr/local -xzf - \
     && apt-get clean \

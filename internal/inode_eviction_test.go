@@ -301,7 +301,7 @@ func TestInodeEvictionFlags(t *testing.T) {
 	for _, tc := range []struct {
 		value string
 		want  time.Duration
-	}{{"", 5 * time.Minute}, {"0", 0}, {"2m", 2 * time.Minute}} {
+	}{{"", 30 * time.Minute}, {"0", 0}, {"2m", 2 * time.Minute}} {
 		t.Run(tc.value, func(t *testing.T) {
 			app := NewApp()
 			called := false

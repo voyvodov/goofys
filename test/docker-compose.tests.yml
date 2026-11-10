@@ -3,13 +3,20 @@ networks:
     driver: bridge
 
 services:
-  minio:
-    image: bitnami/minio:2024.9.13
+  rustfs:
+    image: rustfs/rustfs:1.0.4
     ports:
-      - 9001:9001
+      - 127.0.0.1:9000:9000
     environment:
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      RUSTFS_ACCESS_KEY: rustfsadmin
+      RUSTFS_SECRET_KEY: rustfsadmin
+      RUSTFS_CONSOLE_ENABLE: 'false'
+    healthcheck:
+      test: [CMD, curl, -fsS, http://localhost:9000/health/ready]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
     networks:
       - goofys-tests
 
@@ -18,7 +25,7 @@ services:
     build: 
       context: ./goofys-ci
       args:
-        GO_VERSION: 1.21.7
+        GO_VERSION: 1.27.3
     
     cap_add:
       - SYS_ADMIN
@@ -27,11 +34,10 @@ services:
     volumes:
       - ../:/code
     environment:
-      TEST_ENDPOINT_URL: http://minio:9000
+      TEST_ENDPOINT_URL: http://rustfs:9000
     depends_on:
-      - minio
-    links:
-      - minio
+      rustfs:
+        condition: service_healthy
     networks:
       - goofys-tests
     command: bash -c "cd /code/; ./test/run-tests.sh"

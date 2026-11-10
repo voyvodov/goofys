@@ -38,28 +38,26 @@ jobs:
     name: test (${{ matrix.os }}/go-${{ matrix.go-version }})
     runs-on: ${{ matrix.os }}-latest
     services:
-      minio:
-        image: ${{ (matrix.os == 'ubuntu') && 'bitnami/minio:2023.7.18' || ''}}
+      rustfs:
+        image: rustfs/rustfs:1.0.4
         ports:
           - 45677:9000
         options: >-
-          --health-cmd "curl -I http://localhost:9000/minio/health/live -s"
+          --health-cmd "curl -fsS http://localhost:9000/health/ready"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+          --health-start-period 30s
         env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
+          RUSTFS_ACCESS_KEY: rustfsadmin
+          RUSTFS_SECRET_KEY: rustfsadmin
+          RUSTFS_CONSOLE_ENABLE: 'false'
     steps:
     - uses: actions/checkout@v2
     - uses: actions/setup-go@v2
       with:
         go-version: ${{ matrix.go-version }}
-    - uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: temurin
-
+    - run: sudo apt-get update && sudo apt-get install -y fuse3
     - run: make test
       env:
-        TEST_ENDPOINT_URL: ${{ (matrix.os == 'ubuntu') && 'http://localhost:45677' || '' }}
+        TEST_ENDPOINT_URL: http://localhost:45677

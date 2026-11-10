@@ -41,7 +41,6 @@ import (
 	"context"
 
 	"github.com/aws/aws-sdk-go/aws"
-	"github.com/aws/aws-sdk-go/aws/corehandlers"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 
 	"github.com/Azure/azure-storage-blob-go/azblob"
@@ -273,18 +272,8 @@ func (s *GoofysTest) selectTestConfig(t *C, flags *FlagStorage) (conf S3Config) 
 		conf.Region = "us-west1"
 		conf.Profile = os.Getenv("GCS")
 		flags.Endpoint = "http://storage.googleapis.com"
-	} else if hasEnv("MINIO") {
-		conf.Region = "us-east-1"
-		conf.AccessKey = "minioadmin"
-		conf.SecretKey = "minioadmin"
-		flags.Endpoint = os.Getenv("TEST_ENDPOINT_URL")
 	} else {
-		s.emulator = true
-
-		conf.Region = "us-west-2"
-		conf.AccessKey = "foo"
-		conf.SecretKey = "bar"
-		flags.Endpoint = "http://127.0.0.1:8080"
+		conf = *rustfsTestConfig(flags)
 	}
 
 	return
@@ -453,10 +442,10 @@ func (s *GoofysTest) setupEnv(t *C, env map[string]*string, public bool) {
 	_, err := s.cloud.MakeBucket(&MakeBucketInput{})
 	t.Assert(err, IsNil)
 
-	// Workaround for minio as it doesn't support correctly bucket ACLs
+	// S3-compatible servers use bucket policies for anonymous access.
 	if public {
 		if backend, ok := s.cloud.Delegate().(*S3Backend); ok {
-			if _, ok := os.LookupEnv("MINIO"); ok {
+			if hasEnv("RUSTFS") {
 				pInput := &s3.PutBucketPolicyInput{
 					Bucket: aws.String(s.cloud.Bucket()),
 					Policy: aws.String(fmt.Sprintf(policyPublicReadOnly, s.cloud.Bucket())),
@@ -539,8 +528,7 @@ func (s *GoofysTest) SetUpTest(t *C) {
 	cloud := os.Getenv("CLOUD")
 
 	if cloud == "s3" {
-		s.emulator = !hasEnv("AWS") && !hasEnv("MINIO")
-		s.waitForEmulator(t)
+		s.emulator = false
 
 		conf := s.selectTestConfig(t, flags)
 		flags.Backend = &conf
@@ -554,11 +542,6 @@ func (s *GoofysTest) SetUpTest(t *C) {
 			s.cloud = NewS3BucketEventualConsistency(s3)
 		}
 
-		if s.emulator {
-			s3.Handlers.Sign.Clear()
-			s3.Handlers.Sign.PushBack(SignV2)
-			s3.Handlers.Sign.PushBackNamed(corehandlers.BuildContentLengthHandler)
-		}
 		_, err = s3.ListBuckets(nil)
 		t.Assert(err, IsNil)
 
@@ -1198,9 +1181,6 @@ func (s *GoofysTest) TestWriteLargeFile(t *C) {
 }
 
 func (s *GoofysTest) TestWriteReallyLargeFile(t *C) {
-	if _, ok := s.cloud.(*S3Backend); ok && s.emulator {
-		t.Skip("seems to be OOM'ing S3proxy 1.8.0")
-	}
 	s.testWriteFile(t, "testLargeFile", 512*1024*1024+1, 128*1024)
 }
 
@@ -1329,13 +1309,6 @@ func (s *GoofysTest) TestRenamePreserveMetadata(t *C) {
 
 func (s *GoofysTest) TestRenameLarge(t *C) {
 	fileSize := int64(2 * 1024 * 1024 * 1024)
-	// AWS S3 can timeout when renaming large file
-	if _, ok := s.cloud.(*S3Backend); ok && s.emulator {
-		// S3proxy runs out of memory on truly large files. We
-		// want to use a large file to test timeout issues
-		// which wouldn't happen on s3proxy anyway
-		fileSize = 21 * 1024 * 1024
-	}
 
 	s.testWriteFile(t, "large_file", fileSize, 128*1024)
 
@@ -2235,8 +2208,7 @@ func (s *GoofysTest) TestWriteSyncWriteFuse(t *C) {
 
 func (s *GoofysTest) TestIssue156(t *C) {
 	_, err := s.LookUpInode(t, "\xae\x8a-")
-	// S3Proxy and aws s3 return different errors
-	// https://github.com/andrewgaul/s3proxy/issues/201
+	// S3-compatible backends can return different errors for invalid UTF-8.
 	t.Assert(err, NotNil)
 }
 
@@ -2354,7 +2326,7 @@ func (s *GoofysTest) TestXAttrGet(t *C) {
 		t.Assert(string(value), Equals, "\"d41d8cd98f00b204e9800998ecf8427e\"")
 	}
 
-	// s3proxy doesn't support storage class yet
+	// Verify AWS-specific storage classes against AWS.
 	if hasEnv("AWS") {
 		cloud := s.getRoot(t).dir.cloud
 		s3, ok := cloud.Delegate().(*S3Backend)
@@ -3419,12 +3391,6 @@ func (s *GoofysTest) newBackend(t *C, bucket string, createBucket bool) (cloud S
 		t.Assert(err, IsNil)
 
 		s3.aws = hasEnv("AWS")
-
-		if s.emulator {
-			s3.Handlers.Sign.Clear()
-			s3.Handlers.Sign.PushBack(SignV2)
-			s3.Handlers.Sign.PushBackNamed(corehandlers.BuildContentLengthHandler)
-		}
 
 		if s3.aws {
 			cloud = NewS3BucketEventualConsistency(s3)
