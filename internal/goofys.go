@@ -93,7 +93,10 @@ type Goofys struct {
 
 	forgotCnt uint32
 
-	blockCache *BlockCache
+	blockCache     *BlockCache
+	evictionCancel context.CancelFunc
+	evictionDone   chan struct{}
+	activeSlurps   int // guarded by mu; subtree listings temporarily release inode locks
 }
 
 var s3Log = GetLogger("s3")
@@ -243,6 +246,7 @@ func newGoofys(ctx context.Context, bucket string, flags *FlagStorage,
 
 	fs.replicators = Ticket{Total: 16}.Init()
 	fs.restorers = Ticket{Total: 20}.Init()
+	fs.startInodeEviction(ctx)
 
 	return fs
 }
@@ -280,6 +284,81 @@ func (fs *Goofys) SigUsr1() {
 	log.Infof("%v inodes", len(fs.inodes))
 	fs.mu.RUnlock()
 	debug.FreeOSMemory()
+}
+
+// collectUnreferencedDescendants walks the directory tree under inode,
+// collecting unreferenced (refcnt == 0) descendant inodes. The root
+// inode itself is always included. Stops recursion at referenced
+// children — they are the kernel's responsibility and their subtrees
+// will be cleaned when those children are eventually forgotten.
+// Acquires each directory's inode.mu and fs.mu to snapshot its
+// unreferenced children safely, then releases both before recursing.
+// Must NOT hold fs.mu (lock ordering: inode.mu before fs.mu).
+func (fs *Goofys) collectUnreferencedDescendants(inode *Inode, result *[]*Inode) {
+	*result = append(*result, inode)
+	if !inode.isDir() {
+		return
+	}
+
+	inode.mu.Lock()
+	fs.mu.RLock()
+	var children []*Inode
+	for _, child := range inode.dir.Children {
+		if *child.Name == "." || *child.Name == ".." {
+			continue
+		}
+		if child.refcnt == 0 {
+			children = append(children, child)
+		}
+	}
+	fs.mu.RUnlock()
+	inode.mu.Unlock()
+
+	for _, child := range children {
+		fs.collectUnreferencedDescendants(child, result)
+	}
+}
+
+// removeInodeFromMap removes inode and its unreferenced descendants
+// from fs.inodes. Walks the tree without fs.mu to respect lock
+// ordering, then batch-deletes under fs.mu. Referenced descendants
+// are kept — they remain reachable through their parent's Children
+// and will be cleaned when the kernel sends ForgetInode for them.
+// Must NOT hold fs.mu.
+func (fs *Goofys) removeInodeFromMap(inode *Inode) {
+	fs.mu.RLock()
+	parent := inode.Parent
+	fs.mu.RUnlock()
+	var toRemove []*Inode
+	fs.collectUnreferencedDescendants(inode, &toRemove)
+
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	if fs.inodes[inode.ID] != inode || inode.refcnt != 0 || inode.Parent != parent {
+		return
+	}
+	removed := make(map[*Inode]bool)
+	for _, n := range toRemove {
+		if fs.inodes[n.ID] != n || n.refcnt != 0 || atomic.LoadInt32(&n.fileHandles) != 0 {
+			continue
+		}
+		if n != inode && !removed[n.Parent] {
+			continue
+		}
+		inUse := false
+		for _, dh := range fs.dirHandles {
+			if dh.inode == n {
+				inUse = true
+				break
+			}
+		}
+		if inUse {
+			continue
+		}
+		delete(fs.inodes, n.ID)
+		fs.forgotCnt++
+		removed[n] = true
+	}
 }
 
 // Find the given inode. Panic if it doesn't exist.
@@ -609,7 +688,9 @@ func (fs *Goofys) LookUpInode(
 	inode = parent.findChildUnlocked(op.Name)
 	if inode != nil {
 		ok = true
+		fs.mu.Lock()
 		inode.Ref()
+		fs.mu.Unlock()
 
 		if expired(inode.AttrTime, fs.flags.StatCacheTTL) {
 			ok = false
@@ -641,13 +722,18 @@ func (fs *Goofys) LookUpInode(
 		} else if err != nil {
 			if inode != nil {
 				// just kidding! pretend we didn't up the ref
+				parent.mu.Lock()
 				fs.mu.Lock()
-				defer fs.mu.Unlock()
-
 				stale := inode.DeRef(1)
+				if stale && parent.findChildUnlocked(op.Name) == inode {
+					parent.removeChildUnlocked(inode)
+					inode.Parent = nil
+				}
+				fs.mu.Unlock()
+				parent.mu.Unlock()
+
 				if stale {
-					delete(fs.inodes, inode.ID)
-					parent.removeChild(inode)
+					fs.removeInodeFromMap(inode)
 				}
 			}
 			return err
@@ -662,6 +748,10 @@ func (fs *Goofys) LookUpInode(
 				fs.mu.Lock()
 				inode = newInode
 				fs.insertInode(parent, inode)
+				fs.mu.Unlock()
+			} else {
+				fs.mu.Lock()
+				inode.Ref()
 				fs.mu.Unlock()
 			}
 			parent.mu.Unlock()
@@ -712,6 +802,7 @@ func (fs *Goofys) LookUpInode(
 // LOCKS_REQUIRED(fs.mu)
 // LOCKS_REQUIRED(parent.mu)
 func (fs *Goofys) insertInode(parent *Inode, inode *Inode) {
+	inode.lastUsed = time.Now()
 	addInode := false
 	if *inode.Name == "." {
 		inode.ID = parent.ID
@@ -754,48 +845,41 @@ func (fs *Goofys) addDotAndDotDot(dir *Inode) {
 func (fs *Goofys) ForgetInode(
 	ctx context.Context,
 	op *fuseops.ForgetInodeOp) (err error) {
+	for {
+		fs.mu.RLock()
+		inode := fs.inodes[op.Inode]
+		if inode == nil {
+			fs.mu.RUnlock()
+			return nil
+		}
+		parent := inode.Parent
+		fs.mu.RUnlock()
 
-	fs.mu.RLock()
-	// we don't use getInodeOrDie here because it's possible that the kernel sends forget for an inode that is not found, just ignore it
-	inode, ok := fs.inodes[op.Inode]
-	fs.mu.RUnlock()
-
-	if !ok || inode == nil {
-		return
-	}
-
-	if inode.Parent != nil {
-		inode.Parent.mu.Lock()
-		defer inode.Parent.mu.Unlock()
-	}
-	stale := inode.DeRef(op.N)
-
-	if stale {
+		if parent != nil {
+			parent.mu.Lock()
+		}
 		fs.mu.Lock()
-		defer fs.mu.Unlock()
-
-		// https://github.com/kahing/goofys/pull/786
-		if inode.isDir() {
-			for _, child := range inode.dir.Children {
-				if *child.Name == "." || *child.Name == ".." {
-					// don't delete . and .., they will be cleaned up when the parent dir is deleted
-					continue
-				}
-
-				delete(fs.inodes, child.ID)
-				fs.forgotCnt += 1
+		if fs.inodes[op.Inode] != inode || inode.Parent != parent {
+			fs.mu.Unlock()
+			if parent != nil {
+				parent.mu.Unlock()
 			}
+			continue
 		}
-
-		delete(fs.inodes, op.Inode)
-		fs.forgotCnt += 1
-
-		if inode.Parent != nil {
-			inode.Parent.removeChildUnlocked(inode)
+		stale := inode.DeRef(op.N)
+		if stale && parent != nil {
+			parent.removeChildUnlocked(inode)
+			inode.Parent = nil
 		}
+		fs.mu.Unlock()
+		if parent != nil {
+			parent.mu.Unlock()
+		}
+		if stale {
+			fs.removeInodeFromMap(inode)
+		}
+		return nil
 	}
-
-	return
 }
 
 func (fs *Goofys) OpenDir(
@@ -807,6 +891,7 @@ func (fs *Goofys) OpenDir(
 	fs.nextHandleID++
 
 	in := fs.getInodeOrDie(op.Inode)
+	in.lastUsed = time.Now()
 	fs.mu.Unlock()
 
 	// XXX/is this a dir?
@@ -883,6 +968,7 @@ func (fs *Goofys) ReleaseDirHandle(
 	defer fs.mu.Unlock()
 
 	dh := fs.dirHandles[op.Handle]
+	dh.inode.lastUsed = time.Now()
 	dh.CloseDir()
 
 	fuseLog.Debugln("ReleaseDirHandle", *dh.inode.FullName())
@@ -910,6 +996,7 @@ func (fs *Goofys) OpenFile(
 	fs.nextHandleID++
 
 	fs.fileHandles[handleID] = fh
+	in.lastUsed = time.Now()
 	fs.mu.Unlock()
 
 	op.Handle = handleID
@@ -1199,17 +1286,24 @@ func (fs *Goofys) Rename(
 
 			newNode := newParent.findChildUnlocked(op.NewName)
 			if newNode != nil {
-				// this file's been overwritten, it's
-				// been detached but we can't delete
-				// it just yet, because the kernel
-				// will still send forget ops to us
+				fs.mu.Lock()
 				newParent.removeChildUnlocked(newNode)
 				newNode.Parent = nil
+
+				unreferenced := newNode.refcnt == 0
+				fs.mu.Unlock()
+
+				if unreferenced {
+					fs.removeInodeFromMap(newNode)
+				}
 			}
 
 			inode.Name = &op.NewName
+			fs.mu.Lock()
 			inode.Parent = newParent
+			inode.lastUsed = time.Now()
 			newParent.insertChildUnlocked(inode)
+			fs.mu.Unlock()
 		}
 	}
 	return

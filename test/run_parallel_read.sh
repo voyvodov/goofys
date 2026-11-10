@@ -21,5 +21,5 @@ cp mnt/small test/output/small
 
 for i in $files; do
     echo "checking $i"
-    cmp /tmp/s3proxy/test/$i test/output/$i
+    cmp /tmp/goofys-parallel-read/$i test/output/$i
 done

@@ -63,7 +63,8 @@ type Inode struct {
 
 	// We are not very consistent about enforcing locks for `Parent` because, the
 	// parent field very very rarely changes and it is generally fine to operate on
-	// stale parent informaiton
+	// stale parent information. Writes also require fs.mu so eviction can
+	// safely snapshot and revalidate Parent under the global lock.
 	Parent *Inode
 
 	dir *DirInodeData
@@ -85,7 +86,8 @@ type Inode struct {
 
 	// the refcnt is an exception, it's protected by the global lock
 	// Goofys.mu
-	refcnt uint64
+	refcnt   uint64
+	lastUsed time.Time // guarded by fs.mu; independent of attribute freshness
 }
 
 func NewInode(fs *Goofys, parent *Inode, name *string) (inode *Inode) {
@@ -100,6 +102,7 @@ func NewInode(fs *Goofys, parent *Inode, name *string) (inode *Inode) {
 		Parent:     parent,
 		s3Metadata: make(map[string][]byte),
 		refcnt:     1,
+		lastUsed:   time.Now(),
 	}
 
 	return
@@ -281,6 +284,7 @@ func (in *Inode) Ref() {
 	in.logFuse("Ref", in.refcnt)
 
 	in.refcnt++
+	in.lastUsed = time.Now()
 }
 
 func (in *Inode) DeRef(n uint64) (stale bool) {
@@ -336,11 +340,6 @@ func (in *Inode) fillXattrFromHead(resp *HeadBlobOutput) {
 // LOCKS_REQUIRED(inode.mu)
 func (in *Inode) fillXattr() (err error) {
 	if !in.ImplicitDir && in.userMetadata == nil {
-
-		fullName := *in.FullName()
-		if in.isDir() {
-			fullName += "/"
-		}
 
 		cloud, key := in.cloud()
 		params := &HeadBlobInput{Key: key}

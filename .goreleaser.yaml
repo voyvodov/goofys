@@ -2,8 +2,7 @@ version: 2
 
 before:
   hooks:
-    - make get-deps
-    - make build
+    - go mod download
 builds:
   - builder: go
     binary: goofys

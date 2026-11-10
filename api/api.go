@@ -135,6 +135,7 @@ func Mount(
 
 	mfs, err = fuse.Mount(flags.MountPoint, server, mountCfg)
 	if err != nil {
+		fs.Destroy()
 		err = fmt.Errorf("Mount: %v", err)
 		return
 	}

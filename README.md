@@ -63,6 +63,26 @@ See also: [Instruction for Azure Blob Storage, Azure Data Lake Gen1, and Azure D
 
 Got more questions? Check out [questions other people asked](https://github.com/voyvodov/goofys/issues?utf8=%E2%9C%93&q=is%3Aissue%20label%3Aquestion%20)
 
+# Inode cache eviction
+
+By default, goofys checks once a minute for unreferenced cached inodes
+that have been idle for five minutes. Set `--inode-cache-ttl` to change
+the idle timeout, or use `--inode-cache-ttl 0` to disable eviction.
+This timeout is independent of `--stat-cache-ttl` and `--type-cache-ttl`.
+
+Eviction removes cached files and empty directories without deleting
+objects from storage. Later lookups reload objects that still exist and
+return a missing-file error for objects deleted outside goofys. Referenced
+inodes, open files, and directories being listed are protected. An active
+directory listing also protects its children to preserve listing offsets.
+Busy entries are retried on later sweeps, so the timeout is not a strict
+memory limit. Referenced inodes remain until the kernel releases them.
+
+Applications using `NewGoofys` directly can enable eviction through
+`FlagStorage.InodeCacheTTL` and must call `Destroy` when finished. The FUSE
+server calls `Destroy` on unmount; canceling the constructor context also
+stops the eviction worker.
+
 # Benchmark
 
 Using `--stat-cache-ttl 1s --type-cache-ttl 1s` for goofys
@@ -102,6 +122,32 @@ List of non-POSIX behaviors/limitations:
   * `unlink` returns success even if file is not present
   * `fsync` is ignored, files are only flushed on `close`
 
+## Running tests
+
+Run `make test` with Go, Docker, curl, and FUSE installed. The runner starts
+an isolated `rustfs/rustfs:1.0.4` container, waits for readiness, runs the
+tests, and removes the container when it exits. Set `RUSTFS_IMAGE` to test
+another RustFS image.
+
+To use an existing RustFS server instead of starting a container:
+
+```sh
+TEST_ENDPOINT_URL=http://127.0.0.1:9000 make test
+```
+
+The test credentials default to `rustfsadmin` / `rustfsadmin`. Set
+`RUSTFS_ACCESS_KEY` and `RUSTFS_SECRET_KEY` when using different credentials.
+Use a dedicated test server: the suite creates and deletes buckets and objects.
+Existing cloud test modes selected with `CLOUD`, `AWS`, or `GCS` remain available.
+
+`./test/run-tests.local.sh` runs the suite in Docker Compose with FUSE access
+and requires Docker Compose v2. For the manual parallel-read test, first start
+RustFS with `docker compose -f test/docker-compose.tests.yml up -d --wait rustfs`,
+then run `./test/prepare_parallel_read.sh` (requires AWS CLI). Mount its `test`
+bucket at `mnt` with the RustFS endpoint and credentials before running
+`./test/run_parallel_read.sh`. Stop the server afterwards with
+`docker compose -f test/docker-compose.tests.yml down --volumes`.
+
 ## Compatibility with non-AWS S3
 
 goofys has been tested with the following non-AWS S3 providers:
@@ -113,6 +159,7 @@ goofys has been tested with the following non-AWS S3 providers:
 * Google Cloud Storage
 * Minio (limited)
 * OpenStack Swift
+* RustFS
 * S3Proxy
 * Scaleway
 * Wasabi
@@ -139,5 +186,5 @@ The purpose of this was to [simplify the process described here](https://github.
       filesystem for
       [Google Cloud Storage](https://cloud.google.com/storage/). Goofys
       borrowed some skeleton code from this project.
-  * [S3Proxy](https://github.com/andrewgaul/s3proxy) is used for `go test`
+  * [RustFS](https://rustfs.com/) is used for local and CI S3 tests
   * [fuse binding](https://github.com/jacobsa/fuse), also used by `gcsfuse`

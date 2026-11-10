@@ -54,6 +54,7 @@ type FlagStorage struct {
 	BlockReadCacheMemRatio float64
 	StatCacheTTL           time.Duration
 	TypeCacheTTL           time.Duration
+	InodeCacheTTL          time.Duration
 	HTTPTimeout            time.Duration
 
 	// Debugging
