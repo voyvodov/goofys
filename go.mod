@@ -15,7 +15,7 @@ require (
 	github.com/gofrs/uuid v4.2.0+incompatible
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/jacobsa/fuse v0.0.0-20260302145937-f1ba38d60fdf
+	github.com/jacobsa/fuse v0.0.0-20260630194014-a124548f6da7
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
 	github.com/mitchellh/go-homedir v1.1.0
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58
