@@ -78,6 +78,16 @@ directory listing also protects its children to preserve listing offsets.
 Busy entries are retried on later sweeps, so the timeout is not a strict
 memory limit. Referenced inodes remain until the kernel releases them.
 
+Send `kill -HUP <pid>` to the mounted goofys process to write a JSON state
+dump. The log reports the path to `goofys-state-*.json` in the process's
+temporary directory (`TMPDIR`, or usually `/tmp`). The file is readable only
+by its owner. It contains inode IDs, parent/child relationships, reference
+counts, idle timestamps, open handles, eviction settings, and memory counts.
+The snapshot is best effort: busy inodes are marked `busy` and have partial
+details, and entries removed during collection are marked accordingly.
+SIGHUP keeps the mount running. SIGUSR1 still reports inode counts and
+requests memory reclamation.
+
 Applications using `NewGoofys` directly can enable eviction through
 `FlagStorage.InodeCacheTTL` and must call `Destroy` when finished. The FUSE
 server calls `Destroy` on unmount; canceling the constructor context also

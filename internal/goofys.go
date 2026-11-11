@@ -280,8 +280,8 @@ func RandStringBytesMaskImprSrc(n int) string {
 func (fs *Goofys) SigUsr1() {
 	fs.mu.RLock()
 
-	log.Infof("forgot %v inodes", fs.forgotCnt)
-	log.Infof("%v inodes", len(fs.inodes))
+	log.Infof("forgotten: %v inodes", fs.forgotCnt)
+	log.Infof("remaining: %v inodes", len(fs.inodes))
 	fs.mu.RUnlock()
 	debug.FreeOSMemory()
 }

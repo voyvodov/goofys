@@ -42,14 +42,18 @@ import (
 var log = GetLogger("main")
 
 func registerSIGINTHandler(fs *Goofys, flags *FlagStorage) {
-	// Register for SIGINT.
+	// Register shutdown and diagnostic signals.
 	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM, syscall.SIGUSR1)
+	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM, syscall.SIGUSR1, syscall.SIGHUP)
 
-	// Start a goroutine that will unmount when the signal is received.
+	// Handle diagnostics separately from signals requesting an unmount.
 	go func() {
 		for {
 			s := <-signalChan
+			if s == syscall.SIGHUP {
+				dumpState(fs)
+				continue
+			}
 			if s == syscall.SIGUSR1 {
 				log.Infof("Received %v", s)
 				fs.SigUsr1()
@@ -73,6 +77,25 @@ func registerSIGINTHandler(fs *Goofys, flags *FlagStorage) {
 			}
 		}
 	}()
+}
+
+func dumpState(fs *Goofys) {
+	file, err := os.CreateTemp("", "goofys-state-*.json")
+	if err != nil {
+		log.Errorf("Unable to create state dump: %v", err)
+		return
+	}
+	err = fs.DumpState(file)
+	closeErr := file.Close()
+	if err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = os.Remove(file.Name())
+		log.Errorf("Unable to write state dump: %v", err)
+		return
+	}
+	log.Infof("State dump written to %s", file.Name())
 }
 
 var waitedForSignal os.Signal

@@ -31,7 +31,9 @@ func (fs *Goofys) startInodeEviction(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case now := <-ticker.C:
-				fs.evictInodes(now)
+				if evicted := fs.evictInodes(now); evicted > 0 {
+					log.Infof("%d inodes evicted", evicted)
+				}
 			}
 		}
 	}()
