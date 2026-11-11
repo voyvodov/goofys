@@ -63,6 +63,17 @@ See also: [Instruction for Azure Blob Storage, Azure Data Lake Gen1, and Azure D
 
 Got more questions? Check out [questions other people asked](https://github.com/voyvodov/goofys/issues?utf8=%E2%9C%93&q=is%3Aissue%20label%3Aquestion%20)
 
+## Optional FUSE capabilities
+
+Use `--async-dio` to enable asynchronous direct I/O, `--async-reads` for
+asynchronous buffered reads, and `--readdirplus` to return inode attributes
+with directory entries. Each option is disabled by default and can be
+enabled independently:
+
+```sh
+goofys --async-dio --async-reads --readdirplus bucket /mountpoint
+```
+
 # Inode cache eviction
 
 By default, goofys checks once a minute for unreferenced cached inodes

@@ -216,6 +216,18 @@ func NewApp() (app *cli.App) {
 			/////////////////////////
 
 			cli.BoolFlag{
+				Name:  "async-dio",
+				Usage: "Enable asynchronous FUSE direct I/O (default: off)",
+			},
+			cli.BoolFlag{
+				Name:  "async-reads",
+				Usage: "Enable asynchronous FUSE buffered reads (default: off)",
+			},
+			cli.BoolFlag{
+				Name:  "readdirplus",
+				Usage: "Return inode attributes with FUSE directory entries (default: off)",
+			},
+			cli.BoolFlag{
 				Name:  "cheap",
 				Usage: "Reduce S3 operation costs at the expense of some performance (default: off)",
 			},
@@ -303,7 +315,7 @@ func NewApp() (app *cli.App) {
 		flagCategories[f] = "aws"
 	}
 
-	for _, f := range []string{"cheap", "block-read-cache",
+	for _, f := range []string{"async-dio", "async-reads", "readdirplus", "cheap", "block-read-cache",
 		"block-read-cache-size", "block-read-cache-mem-ratio", "no-implicit-dir",
 		"stat-cache-ttl", "type-cache-ttl", "inode-cache-ttl", "http-timeout"} {
 		flagCategories[f] = "tuning"
@@ -357,6 +369,9 @@ func PopulateFlags(c *cli.Context) (ret *FlagStorage) {
 		GID:          uint32(c.Int("gid")),
 
 		// Tuning,
+		EnableAsyncDIO:         c.Bool("async-dio"),
+		EnableAsyncReads:       c.Bool("async-reads"),
+		EnableReaddirplus:      c.Bool("readdirplus"),
 		Cheap:                  c.Bool("cheap"),
 		BlockReadCache:         c.Bool("block-read-cache"),
 		BlockReadCacheSize:     c.Uint64("block-read-cache-size"),

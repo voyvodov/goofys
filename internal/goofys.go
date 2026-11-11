@@ -971,6 +971,60 @@ func (fs *Goofys) ReadDir(
 	return
 }
 
+func (fs *Goofys) ReadDirPlus(ctx context.Context, op *fuseops.ReadDirPlusOp) error {
+	fs.mu.RLock()
+	dh := fs.dirHandles[op.Handle]
+	fs.mu.RUnlock()
+	if dh == nil {
+		return syscall.EBADF
+	}
+	dh.mu.Lock()
+	defer dh.mu.Unlock()
+	for offset := op.Offset; ; offset++ {
+		entry, err := dh.ReadDir(offset)
+		if err != nil || entry == nil {
+			if op.BytesRead != 0 {
+				return nil
+			}
+			return err
+		}
+		plus := fuseutil.DirentPlus{Dirent: makeDirEntry(entry)}
+		// Check space before Lookup: each returned entry acquires a kernel
+		// reference, so entries that do not fit must not acquire one.
+		n := fuseutil.WriteDirentPlus(op.Dst[op.BytesRead:], plus)
+		if n == 0 {
+			return nil
+		}
+		// The kernel does not acquire lookup references for . and .. .
+		if entry.Name != "." && entry.Name != ".." {
+			lookup := fuseops.LookUpInodeOp{Parent: dh.inode.ID, Name: entry.Name}
+			if err := fs.LookUpInode(ctx, &lookup); err != nil {
+				// Preserve references for entries already returned. A later
+				// request will retry the entry that failed.
+				if op.BytesRead != 0 {
+					return nil
+				}
+				if err == fuse.ENOENT {
+					// Lookup may remove a stale cached child. Retry this
+					// offset if the following child shifted into its place.
+					dh.inode.mu.Lock()
+					children := dh.inode.dir.Children
+					if uint64(offset) < uint64(len(children)) && children[offset].ID != entry.Inode {
+						offset--
+					}
+					dh.inode.mu.Unlock()
+					continue
+				}
+				return err
+			}
+			plus.Entry = lookup.Entry
+			plus.Dirent.Inode = lookup.Entry.Child
+			n = fuseutil.WriteDirentPlus(op.Dst[op.BytesRead:], plus)
+		}
+		op.BytesRead += n
+	}
+}
+
 func (fs *Goofys) ReleaseDirHandle(
 	ctx context.Context,
 	op *fuseops.ReleaseDirHandleOp) (err error) {

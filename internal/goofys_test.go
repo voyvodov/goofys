@@ -1690,6 +1690,9 @@ func (s *GoofysTest) mount(t *C, mountPoint string) {
 		Options:                 s.fs.flags.MountOptions,
 		ErrorLogger:             GetStdLogger(NewLogger("fuse"), logrus.ErrorLevel),
 		DisableWritebackCaching: true,
+		EnableAsyncDIO:          s.fs.flags.EnableAsyncDIO,
+		EnableAsyncReads:        s.fs.flags.EnableAsyncReads,
+		EnableReaddirplus:       s.fs.flags.EnableReaddirplus,
 	}
 	mountCfg.DebugLogger = GetStdLogger(fuseLog, logrus.DebugLevel)
 
@@ -1793,6 +1796,13 @@ func (s *GoofysTest) TestFuse(t *C) {
 	mountPoint := "/tmp/mnt" + s.fs.bucket
 
 	s.runFuseTest(t, mountPoint, true, "../test/fuse-test.sh", mountPoint)
+}
+
+func (s *GoofysTest) TestFuseReaddirplus(t *C) {
+	s.fs.flags.EnableAsyncDIO = true
+	s.fs.flags.EnableAsyncReads = true
+	s.fs.flags.EnableReaddirplus = true
+	s.TestFuse(t)
 }
 
 func (s *GoofysTest) TestFuseWithTTL(t *C) {

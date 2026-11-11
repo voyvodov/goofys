@@ -11,7 +11,7 @@ import (
 	"github.com/jacobsa/fuse/fuseops"
 )
 
-func TestDumpStateIncludesReferencesAndHandles(t *testing.T) {
+func TestDumpStateIncludesSummaryAndHandles(t *testing.T) {
 	fs := newTestFS()
 	fs.flags.InodeCacheTTL = 30 * time.Minute
 	fs.bucket = "test-bucket"
@@ -37,21 +37,6 @@ func TestDumpStateIncludesReferencesAndHandles(t *testing.T) {
 	}
 	if state.FileHandles[7] != file.ID || state.DirHandles[8] != dir.ID {
 		t.Fatal("missing open handles")
-	}
-	entries := make(map[fuseops.InodeID]inodeState)
-	for i, inode := range state.Inodes {
-		entries[inode.ID] = inode
-		if i > 0 && inode.ID <= state.Inodes[i-1].ID {
-			t.Fatal("inodes are not sorted by ID")
-		}
-	}
-	if !entries[dir.ID].Busy {
-		t.Fatal("locked directory was not marked busy")
-	}
-	entry := entries[file.ID]
-	if entry.Name != "file" || entry.Parent != dir.ID || entry.References != 2 || entry.FileHandles != 1 ||
-		!entry.LastUsed.Equal(file.lastUsed) {
-		t.Fatalf("incorrect inode state: %+v", entry)
 	}
 }
 

@@ -37,6 +37,9 @@ func Mount(
 		Options:                 flags.MountOptions,
 		ErrorLogger:             GetStdLogger(NewLogger("fuse"), logrus.ErrorLevel),
 		DisableWritebackCaching: true,
+		EnableAsyncDIO:          flags.EnableAsyncDIO,
+		EnableAsyncReads:        flags.EnableAsyncReads,
+		EnableReaddirplus:       flags.EnableReaddirplus,
 	}
 
 	if flags.DebugFuse {

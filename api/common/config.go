@@ -47,6 +47,9 @@ type FlagStorage struct {
 	Backend interface{}
 
 	// Tuning
+	EnableAsyncDIO         bool
+	EnableAsyncReads       bool
+	EnableReaddirplus      bool
 	Cheap                  bool
 	ExplicitDir            bool
 	BlockReadCache         bool
