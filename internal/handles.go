@@ -342,6 +342,12 @@ func (in *Inode) fillXattr() (err error) {
 	if !in.ImplicitDir && in.userMetadata == nil {
 
 		cloud, key := in.cloud()
+		// A bucket root is a namespace, not an object with an empty key.
+		// Directory-aware backends may support metadata on their root.
+		if in.isDir() && key == "" && !cloud.Capabilities().DirBlob {
+			in.ImplicitDir = true
+			return nil
+		}
 		params := &HeadBlobInput{Key: key}
 		resp, err := cloud.HeadBlob(params)
 		if err != nil {

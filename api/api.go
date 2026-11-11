@@ -48,10 +48,6 @@ func Mount(
 		GetLogger("fuse").Level = logrus.InfoLevel
 	}
 
-	if flags.PProfAddr != "" {
-		startPprof(flags.PProfAddr)
-	}
-
 	if flags.Backend == nil {
 		if spec, err := internal.ParseBucketSpec(bucketName); err == nil {
 			switch spec.Scheme {
@@ -131,6 +127,11 @@ func Mount(
 		err = fmt.Errorf("Mount: initialization failed")
 		return
 	}
+
+	if flags.PProfAddr != "" {
+		startPprof(flags.PProfAddr, fs)
+	}
+
 	server := fuseutil.NewFileSystemServer(FusePanicLogger{fs})
 
 	mfs, err = fuse.Mount(flags.MountPoint, server, mountCfg)
@@ -195,7 +196,7 @@ func Mount(
 	return
 }
 
-func startPprof(addr string) {
+func startPprof(addr string, fs *Goofys) {
 	log.Infof("Starting pprof server on %s", addr)
 
 	mux := http.NewServeMux()
@@ -205,6 +206,12 @@ func startPprof(addr string) {
 	mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+	if fs != nil {
+		mux.HandleFunc("/debug/inodes", func(w http.ResponseWriter, r *http.Request) {
+			fmt.Fprintf(w, "%d\n", fs.InodeCount())
+		})
+	}
 
 	go func() {
 		err := http.ListenAndServe(addr, mux)

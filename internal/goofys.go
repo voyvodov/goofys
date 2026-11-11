@@ -286,6 +286,12 @@ func (fs *Goofys) SigUsr1() {
 	debug.FreeOSMemory()
 }
 
+func (fs *Goofys) InodeCount() int {
+	fs.mu.RLock()
+	defer fs.mu.RUnlock()
+	return len(fs.inodes)
+}
+
 // collectUnreferencedDescendants walks the directory tree under inode,
 // collecting unreferenced (refcnt == 0) descendant inodes. The root
 // inode itself is always included. Stops recursion at referenced
@@ -552,8 +558,13 @@ func (fs *Goofys) ListXattr(ctx context.Context,
 	fs.mu.RLock()
 	inode := fs.getInodeOrDie(op.Inode)
 	fs.mu.RUnlock()
+	var xattrs []string
 
-	xattrs, err := inode.ListXattr()
+	// If the inode is the root inode, we don't need to call ListXattr on it, because the root inode is a virtual directory and doesn't have any xattrs.
+	// We can just return an empty list of xattrs.
+	if inode.ID != 1 {
+		xattrs, err = inode.ListXattr()
+	}
 
 	ncopied := 0
 
