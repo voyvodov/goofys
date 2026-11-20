@@ -132,6 +132,11 @@ func NewApp() (app *cli.App) {
 				Usage: "UID owner of all inodes.",
 			},
 
+			cli.BoolFlag{
+				Name:  "private",
+				Usage: "Make the mount private to prevent mount propagation. Useful when the mount is bind-mounted by Kubernetes pods to avoid pod teardown unmounting the FUSE filesystem. (default: off)",
+			},
+
 			cli.IntFlag{
 				Name:  "gid",
 				Value: gid,
@@ -385,6 +390,9 @@ func PopulateFlags(c *cli.Context) (ret *FlagStorage) {
 		// Common Backend Config
 		Endpoint:       c.String("endpoint"),
 		UseContentType: c.Bool("use-content-type"),
+
+		// Mount propagation
+		MountPrivate: c.Bool("private"),
 
 		// Debugging,
 		DebugFuse:  c.Bool("debug_fuse"),

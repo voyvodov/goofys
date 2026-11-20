@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"syscall"
 	"time"
 
 	"github.com/jacobsa/fuse"
@@ -142,6 +143,12 @@ func Mount(
 		fs.Destroy()
 		err = fmt.Errorf("Mount: %v", err)
 		return
+	}
+
+	if flags.MountPrivate {
+		if err2 := syscall.Mount("", flags.MountPoint, "", syscall.MS_PRIVATE, ""); err2 != nil {
+			log.Warnf("Failed to make mount private: %v", err2)
+		}
 	}
 
 	if len(flags.Cache) != 0 {

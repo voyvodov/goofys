@@ -60,6 +60,9 @@ type FlagStorage struct {
 	InodeCacheTTL          time.Duration
 	HTTPTimeout            time.Duration
 
+	// Mount propagation
+	MountPrivate bool
+
 	// Debugging
 	DebugFuse  bool
 	DebugS3    bool
